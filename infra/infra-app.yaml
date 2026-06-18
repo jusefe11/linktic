@@ -5,36 +5,13 @@ metadata:
   namespace: argocd
 spec:
   project: default
-
   source:
     repoURL: https://github.com/jusefe11/linktic.git
     targetRevision: main
     path: infra
-
   destination:
     server: https://kubernetes.default.svc
     namespace: default
-
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: trueapiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: infra-app
-  namespace: argocd
-spec:
-  project: default
-
-  source:
-    repoURL: https://github.com/jusefe11/linktic.git
-    targetRevision: main
-    path: infra
-
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: default
-
   syncPolicy:
     automated:
       prune: true
