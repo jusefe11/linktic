@@ -1,62 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
-  annotations:
-    deployment.kubernetes.io/revision: "1"
-  creationTimestamp: "2026-06-18T18:20:07Z"
-  generation: 1
   labels:
     app: todo-frontend
   name: todo-frontend
   namespace: todo
-  resourceVersion: "13331"
-  uid: 8b4626ce-87a6-4ac4-8683-e259f76fe207
+
 spec:
-  progressDeadlineSeconds: 600
   replicas: 1
-  revisionHistoryLimit: 10
+
   selector:
     matchLabels:
       app: todo-frontend
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+
   template:
     metadata:
       labels:
         app: todo-frontend
+
     spec:
       containers:
-      - image: nginx
+      - name: http-echo
+        image: hashicorp/http-echo
         imagePullPolicy: Always
-        name: nginx
-        resources: {}
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-      dnsPolicy: ClusterFirst
-      restartPolicy: Always
-      schedulerName: default-scheduler
-      securityContext: {}
-      terminationGracePeriodSeconds: 30
-status:
-  availableReplicas: 1
-  conditions:
-  - lastTransitionTime: "2026-06-18T18:20:11Z"
-    lastUpdateTime: "2026-06-18T18:20:11Z"
-    message: Deployment has minimum availability.
-    reason: MinimumReplicasAvailable
-    status: "True"
-    type: Available
-  - lastTransitionTime: "2026-06-18T18:20:07Z"
-    lastUpdateTime: "2026-06-18T18:20:11Z"
-    message: ReplicaSet "todo-frontend-5bcdd7ddbd" has successfully progressed.
-    reason: NewReplicaSetAvailable
-    status: "True"
-    type: Progressing
-  observedGeneration: 1
-  readyReplicas: 1
-  replicas: 1
-  terminatingReplicas: 0
-  updatedReplicas: 1
+        command:
+        - /http-echo
+        - -text=Todo Frontend OK
