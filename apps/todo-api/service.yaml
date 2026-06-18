@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: "2026-06-18T18:36:47Z"
+  labels:
+    app: todo-api
+  name: todo-api
+  namespace: todo
+  resourceVersion: "14471"
+  uid: 8d1c6f35-7eeb-4fed-bdb8-58a39b57ddd5
+spec:
+  clusterIP: 10.43.2.88
+  clusterIPs:
+  - 10.43.2.88
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - port: 5678
+    protocol: TCP
+    targetPort: 5678
+  selector:
+    app: todo-api
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
