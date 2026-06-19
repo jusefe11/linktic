@@ -24,6 +24,4 @@ spec:
       - name: http-echo
         image: 192.168.1.50:30926/registry-demo:v1
         imagePullPolicy: Always
-        command:
-        - /http-echo
-        - -text=Todo API OK
+       
