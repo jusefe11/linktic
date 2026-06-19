@@ -1,0 +1,22 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tododb
+  namespace: todo
+
+spec:
+  instances: 3
+
+  storage:
+    storageClass: longhorn
+    size: 5Gi
+
+  bootstrap:
+    initdb:
+      database: tododb
+      owner: todo
+      secret:
+        name: tododb-secret
+
+  monitoring:
+    enablePodMonitor: true
