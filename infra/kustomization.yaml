@@ -1,0 +1,4 @@
+resources:
+- metallb/app.yaml
+- longhorn/app.yaml
+- cloudnativepg/app.yaml
