@@ -135,3 +135,43 @@ Healthy
 ```
 
 Los recursos Gateway y HTTPRoute son gestionados por ArgoCD y se encuentran versionados en el repositorio Git.
+
+
+
+# Registry Local (ECR Simulado)
+
+## Implementación
+
+Se desplegó un Docker Registry v2 dentro del clúster Kubernetes en el namespace `registry`.
+
+La elección de Docker Registry v2 se realizó por su simplicidad de operación, bajo consumo de recursos y compatibilidad con el estándar OCI, cumpliendo los requisitos de la prueba para simular un registry privado similar a AWS ECR.
+
+## Arquitectura
+
+* Namespace: `registry`
+* Deployment: `docker-registry`
+* Service: `docker-registry`
+* Puerto: `5000`
+* Exposición mediante Gateway API e Istio.
+* Certificados TLS gestionados por cert-manager.
+
+## Flujo de uso
+
+1. Construcción local de la imagen Docker.
+2. Etiquetado de la imagen apuntando al registry interno.
+3. Push de la imagen al registry del clúster.
+4. Uso de la imagen desde los Deployments de Kubernetes.
+
+Ejemplo:
+
+```bash
+docker build -t todo-api:v1 .
+docker tag todo-api:v1 registry.local/todo-api:v1
+docker push registry.local/todo-api:v1
+```
+
+Posteriormente los Deployments consumen la imagen desde:
+
+```text
+registry.local/todo-api:v1
+```
