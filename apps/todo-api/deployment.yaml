@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
       - name: http-echo
-        image: hashicorp/http-echo
+        image: 192.168.1.50:30926/registry-demo:v1
         imagePullPolicy: Always
         command:
         - /http-echo
