@@ -175,3 +175,170 @@ Posteriormente los Deployments consumen la imagen desde:
 ```text
 registry.local/todo-api:v1
 ```
+
+
+# Aplicación TODO
+
+## Arquitectura
+
+La solución implementa una aplicación de gestión de tareas compuesta por dos microservicios desplegados en el namespace `todo`.
+
+### Todo API
+
+Tecnología:
+
+* Node.js 20
+* Express
+* PostgreSQL
+
+Puerto:
+
+* 8080
+
+Endpoints implementados:
+
+* GET /healthz
+* GET /readyz
+* GET /metrics
+* GET /tasks
+* GET /tasks/{id}
+* POST /tasks
+* PUT /tasks/{id}
+* DELETE /tasks/{id}
+
+La API almacena las tareas en PostgreSQL y expone métricas compatibles con Prometheus mediante la librería prom-client.
+
+### Todo Frontend
+
+Tecnología:
+
+* Frontend HTTP expuesto mediante Service y HTTPRoute
+* Integrado con Istio Gateway
+
+Namespace:
+
+```text
+todo
+```
+
+---
+
+# Recursos Kubernetes Implementados
+
+## Deployment
+
+Se utilizaron Deployments para ambos microservicios.
+
+Características:
+
+* RollingUpdate
+* Gestión declarativa mediante GitOps
+* Integración con ArgoCD
+
+## HTTPRoute
+
+Se implementaron rutas utilizando Gateway API.
+
+Rutas desplegadas:
+
+* todo.local
+* api.todo.local
+
+Las rutas se encuentran asociadas al Gateway principal gestionado por Istio.
+
+## Horizontal Pod Autoscaler
+
+Configuración:
+
+* CPU Target: 60%
+* Mínimo: 2 réplicas
+* Máximo: 5 réplicas
+
+Objetivo:
+
+Escalado automático de la API ante incremento de carga.
+
+## Liveness y Readiness Probes
+
+Todo API:
+
+* /healthz
+* /readyz
+
+Permiten a Kubernetes validar la salud y disponibilidad de la aplicación.
+
+## Resources Requests y Limits
+
+Configurados para evitar consumo descontrolado de recursos.
+
+Ejemplo:
+
+* CPU Request: 100m
+* CPU Limit: 500m
+* Memory Request: 128Mi
+* Memory Limit: 512Mi
+
+## ConfigMap
+
+Variables externalizadas:
+
+* DB_HOST
+* DB_NAME
+
+## Secret
+
+Credenciales protegidas:
+
+* DB_USER
+* DB_PASSWORD
+
+## Service Accounts
+
+Se implementó una cuenta de servicio independiente por microservicio:
+
+* todo-api-sa
+* todo-frontend-sa
+
+Aplicando el principio de mínimo privilegio.
+
+## Network Policies
+
+Se implementaron políticas de red para restringir la comunicación interna.
+
+Objetivos:
+
+* Frontend → API
+* API → PostgreSQL
+
+---
+
+# Observabilidad
+
+## Prometheus
+
+Prometheus realiza el scraping de métricas expuestas por la aplicación mediante:
+
+```text
+/metrics
+```
+
+## Grafana
+
+Grafana permite visualizar métricas de infraestructura y aplicaciones.
+
+## Jaeger
+
+Jaeger proporciona trazabilidad distribuida para las solicitudes procesadas por Istio.
+
+## Kiali
+
+Kiali permite visualizar:
+
+* Frontend → API
+* API → PostgreSQL
+
+Mostrando el flujo de tráfico dentro de la malla de servicios.
+
+---
+
+
