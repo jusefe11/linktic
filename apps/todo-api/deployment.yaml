@@ -20,6 +20,7 @@ spec:
         app: todo-api
 
     spec:
+      serviceAccountName: todo-api-sa
       containers:
       - name: todo-api
 
