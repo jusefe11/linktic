@@ -20,10 +20,24 @@ spec:
         app: todo-frontend
 
     spec:
+      serviceAccountName: todo-frontend-sa
+
       containers:
       - name: http-echo
         image: hashicorp/http-echo
         imagePullPolicy: Always
+
         command:
         - /http-echo
         - -text=Todo Frontend OK
+
+        ports:
+        - containerPort: 5678
+
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "200m"
+            memory: "128Mi"

@@ -1,48 +1,27 @@
-apiVersion: apps/v1
-kind: Deployment
-
-metadata:
-  labels:
-    app: todo-api
-  name: todo-api
-  namespace: todo
-
-spec:
-  replicas: 2
-
-  selector:
-    matchLabels:
-      app: todo-api
-
-  template:
-    metadata:
-      labels:
-        app: todo-api
-
-    spec:
-      serviceAccountName: todo-api-sa
-      containers:
-      - name: todo-api
-
-        image: 192.168.1.50:30926/todo-api:v2
-
-        imagePullPolicy: Always
-
-        ports:
-        - containerPort: 8080
-
         env:
         - name: DB_HOST
-          value: postgres
-
-        - name: DB_USER
-          value: todo
-
-        - name: DB_PASSWORD
-          value: todo123
+          valueFrom:
+            configMapKeyRef:
+              name: todo-api-config
+              key: DB_HOST
 
         - name: DB_NAME
-          value: todo
+          valueFrom:
+            configMapKeyRef:
+              name: todo-api-config
+              key: DB_NAME
+
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: todo-api-secret
+              key: DB_USER
+
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: todo-api-secret
+              key: DB_PASSWORD
 
         livenessProbe:
           httpGet:
@@ -53,12 +32,3 @@ spec:
           httpGet:
             path: /readyz
             port: 8080
-
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-
-          limits:
-            cpu: 500m
-            memory: 512Mi
