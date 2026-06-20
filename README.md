@@ -504,3 +504,146 @@ Esta solución permitió:
 ---
 
 
+# Observabilidad — Istio y Stack de Monitoreo
+
+## Istio Service Mesh
+
+Se desplegó Istio como service mesh principal de la plataforma utilizando Gateway API como mecanismo de exposición de servicios.
+
+Funcionalidades habilitadas:
+
+* Inyección automática de sidecars Envoy.
+* Observabilidad L7.
+* Métricas de tráfico entre servicios.
+* Integración con Prometheus, Grafana, Jaeger y Kiali.
+* Exposición de aplicaciones mediante Gateway API.
+
+Namespace con inyección habilitada:
+
+```bash
+kubectl label namespace todo istio-injection=enabled
+```
+
+Validación:
+
+```bash
+kubectl get ns --show-labels
+```
+
+Resultado:
+
+```text
+todo   istio-injection=enabled
+```
+
+## Jaeger
+
+Jaeger fue desplegado para visualización de trazas distribuidas generadas por Istio.
+
+Servicio:
+
+```text
+Namespace: monitoring
+Service: jaeger
+Puerto: 16686
+```
+
+HTTPRoute configurado:
+
+```text
+jaeger.local
+```
+
+Objetivo:
+
+* Visualizar trazas distribuidas.
+* Analizar flujo de peticiones entre servicios.
+* Correlacionar solicitudes dentro de la malla de servicios.
+
+## Grafana
+
+Grafana fue desplegado mediante kube-prometheus-stack.
+
+Servicio:
+
+```text
+Namespace: monitoring
+Service: kube-prometheus-stack-grafana
+Puerto: 80
+```
+
+HTTPRoute configurado:
+
+```text
+grafana.local
+```
+
+Dashboards disponibles:
+
+* Kubernetes Cluster
+* Istio Mesh
+* Prometheus Metrics
+
+## Kiali
+
+Kiali fue desplegado para visualizar la topología de la malla de servicios.
+
+Servicio:
+
+```text
+Namespace: istio-system
+Service: kiali
+Puerto: 20001
+```
+
+HTTPRoute configurado:
+
+```text
+kiali.local
+```
+
+Funcionalidades:
+
+* Grafo de dependencias.
+* Visualización de tráfico.
+* Estado de workloads.
+* Métricas de latencia y errores.
+
+## HTTPRoutes de Observabilidad
+
+Recursos configurados:
+
+```text
+grafana.local
+jaeger.local
+kiali.local
+```
+
+Implementados mediante Gateway API utilizando el Gateway:
+
+```text
+platform-gateway-istio
+```
+
+## Estado Actual
+
+| Componente            | Estado    |
+| --------------------- | --------- |
+| Istio                 | Operativo |
+| Gateway API           | Operativo |
+| Prometheus            | Operativo |
+| Grafana               | Operativo |
+| Jaeger                | Operativo |
+| Kiali                 | Operativo |
+| Sidecar Injection     | Operativo |
+| Tracing distribuido   | Parcial   |
+| CloudNativePG Metrics | Pendiente |
+| Longhorn Metrics      | Pendiente |
+
+## Incidentes Encontrados
+
+Durante las pruebas sobre K3s ejecutado en VirtualBox se identificaron eventos esporádicos de inestabilidad en el API Server, generando respuestas Timeout e INTERNAL_ERROR durante operaciones de kubectl.
+
+Adicionalmente se identificaron incidencias asociadas a CloudNativePG y Longhorn que afectaron parcialmente la estabilidad general del laboratorio.
+
+A pesar de ello se logró desplegar y validar la mayor parte del stack de observabilidad requerido para la plataforma.
