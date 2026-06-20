@@ -342,3 +342,165 @@ Mostrando el flujo de tráfico dentro de la malla de servicios.
 ---
 
 
+# Base de Datos
+
+## PostgreSQL
+
+La aplicación utiliza PostgreSQL como motor de persistencia para el almacenamiento de tareas.
+
+Características implementadas:
+
+* Persistencia mediante PersistentVolumeClaim.
+* Configuración mediante ConfigMap y Secret.
+* Acceso restringido desde la aplicación todo-api.
+* Integración con Kubernetes mediante Deployment y Service.
+
+## CloudNativePG
+
+Se realizó la instalación del operador CloudNativePG para implementar PostgreSQL cloud-native sobre Kubernetes.
+
+Se definieron recursos GitOps para:
+
+* Secret de credenciales.
+* Definición del clúster PostgreSQL.
+* Integración con Prometheus para monitoreo.
+
+Durante las pruebas en el entorno K3s sobre VirtualBox se presentaron inconvenientes relacionados con el webhook del operador, impidiendo completar el despliegue del recurso Cluster.
+
+Los manifiestos quedaron versionados en Git para futuras iteraciones de la plataforma.
+
+---
+
+# Almacenamiento Persistente
+
+## Evaluación de Longhorn
+
+Se evaluó Longhorn como solución de almacenamiento distribuido para Kubernetes.
+
+Longhorn fue desplegado inicialmente sobre el clúster, validando los requisitos de instalación de open-iscsi en los nodos.
+
+Durante las pruebas se identificaron problemas de estabilidad relacionados con los componentes del controlador y la interfaz de administración.
+
+## Solución Utilizada
+
+La persistencia de la plataforma se mantuvo mediante Local Path Provisioner (LocalPV) incluido en K3s.
+
+Esta solución permitió:
+
+* Persistencia de PostgreSQL.
+* Recuperación de datos tras reinicio de Pods.
+* Recuperación de datos tras recreación de Deployments.
+
+---
+
+# Estado Actual de la Plataforma
+
+| Componente         | Estado    |
+| ------------------ | --------- |
+| Kubernetes K3s     | Operativo |
+| ArgoCD             | Operativo |
+| Gateway API        | Operativo |
+| Istio Service Mesh | Operativo |
+| Cert Manager       | Operativo |
+| Docker Registry    | Operativo |
+| Todo Frontend      | Operativo |
+| Todo API           | Operativo |
+| PostgreSQL         | Operativo |
+| Prometheus         | Operativo |
+| Grafana            | Operativo |
+| Jaeger             | Operativo |
+| Kiali              | Operativo |
+| CloudNativePG      | Parcial   |
+| Longhorn           | Evaluado  |
+
+---
+
+# Evidencias
+
+Para la revisión técnica se incluyen evidencias de:
+
+* ArgoCD Applications.
+* Gateway API.
+* HTTPRoutes.
+* Deployments.
+* Pods.
+* PostgreSQL.
+* Docker Registry.
+* Prometheus.
+* Grafana.
+* Jaeger.
+* Kiali.
+1~# Base de Datos
+
+## PostgreSQL
+
+La aplicación utiliza PostgreSQL como motor de persistencia para el almacenamiento de tareas.
+
+Características implementadas:
+
+* Persistencia mediante PersistentVolumeClaim.
+* Configuración mediante ConfigMap y Secret.
+* Acceso restringido desde la aplicación todo-api.
+* Integración con Kubernetes mediante Deployment y Service.
+
+## CloudNativePG
+
+Se realizó la instalación del operador CloudNativePG para implementar PostgreSQL cloud-native sobre Kubernetes.
+
+Se definieron recursos GitOps para:
+
+* Secret de credenciales.
+* Definición del clúster PostgreSQL.
+* Integración con Prometheus para monitoreo.
+
+Durante las pruebas en el entorno K3s sobre VirtualBox se presentaron inconvenientes relacionados con el webhook del operador, impidiendo completar el despliegue del recurso Cluster.
+
+Los manifiestos quedaron versionados en Git para futuras iteraciones de la plataforma.
+
+---
+
+# Almacenamiento Persistente
+
+## Evaluación de Longhorn
+
+Se evaluó Longhorn como solución de almacenamiento distribuido para Kubernetes.
+
+Longhorn fue desplegado inicialmente sobre el clúster, validando los requisitos de instalación de open-iscsi en los nodos.
+
+Durante las pruebas se identificaron problemas de estabilidad relacionados con los componentes del controlador y la interfaz de administración.
+
+## Solución Utilizada
+
+La persistencia de la plataforma se mantuvo mediante Local Path Provisioner (LocalPV) incluido en K3s.
+
+Esta solución permitió:
+
+* Persistencia de PostgreSQL.
+* Recuperación de datos tras reinicio de Pods.
+* Recuperación de datos tras recreación de Deployments.
+
+---
+
+# Estado Actual de la Plataforma
+
+| Componente         | Estado    |
+| ------------------ | --------- |
+| Kubernetes K3s     | Operativo |
+| ArgoCD             | Operativo |
+| Gateway API        | Operativo |
+| Istio Service Mesh | Operativo |
+| Cert Manager       | Operativo |
+| Docker Registry    | Operativo |
+| Todo Frontend      | Operativo |
+| Todo API           | Operativo |
+| PostgreSQL         | Operativo |
+| Prometheus         | Operativo |
+| Grafana            | Operativo |
+| Jaeger             | Operativo |
+| Kiali              | Operativo |
+| CloudNativePG      | Parcial   |
+| Longhorn           | Evaluado  |
+
+---
+
+
