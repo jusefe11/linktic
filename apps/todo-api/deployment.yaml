@@ -64,7 +64,7 @@ spec:
 
         readinessProbe:
           httpGet:
-            path: /readyz
+            path: /healthz
             port: 8080
 
         resources:
