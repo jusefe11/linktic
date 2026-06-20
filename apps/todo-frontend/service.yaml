@@ -11,7 +11,7 @@ spec:
   ports:
   - port: 80
     protocol: TCP
-    targetPort: 80
+    targetPort: 5678
 
   selector:
     app: todo-frontend
