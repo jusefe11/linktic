@@ -640,10 +640,91 @@ platform-gateway-istio
 | CloudNativePG Metrics | Pendiente |
 | Longhorn Metrics      | Pendiente |
 
-## Incidentes Encontrados
+# Observabilidad
 
-Durante las pruebas sobre K3s ejecutado en VirtualBox se identificaron eventos esporádicos de inestabilidad en el API Server, generando respuestas Timeout e INTERNAL_ERROR durante operaciones de kubectl.
+## Istio Service Mesh
 
-Adicionalmente se identificaron incidencias asociadas a CloudNativePG y Longhorn que afectaron parcialmente la estabilidad general del laboratorio.
+Se instaló Istio utilizando el perfil demo para habilitar observabilidad, trazabilidad distribuida y control de tráfico mediante Envoy Sidecars.
 
-A pesar de ello se logró desplegar y validar la mayor parte del stack de observabilidad requerido para la plataforma.
+Se habilitó la inyección automática de sidecars en el namespace `todo`:
+
+```bash
+kubectl label namespace todo istio-injection=enabled --overwrite
+```
+
+Los pods del namespace `todo` fueron reiniciados para recibir el sidecar Envoy.
+
+## Jaeger
+
+Jaeger fue desplegado para visualizar trazas distribuidas de las solicitudes HTTP procesadas por la aplicación.
+
+Acceso:
+
+* Host: `jaeger.local`
+* Expuesto mediante HTTPRoute gestionado por Istio Gateway.
+
+## Kiali
+
+Kiali permite visualizar el grafo de dependencias y el flujo de tráfico del Service Mesh.
+
+Acceso:
+
+* Host: `kiali.local`
+* Expuesto mediante HTTPRoute gestionado por Istio Gateway.
+
+## Grafana
+
+Grafana fue desplegado mediante kube-prometheus-stack para visualización de métricas de infraestructura y aplicaciones.
+
+Acceso:
+
+* Host: `grafana.local`
+* Expuesto mediante HTTPRoute gestionado por Istio Gateway.
+
+## Loki
+
+Loki fue desplegado para centralización de logs del clúster Kubernetes.
+
+La integración con Grafana permite consultar logs de aplicaciones y componentes de plataforma desde una única interfaz.
+
+## Métricas
+
+Prometheus realiza el scraping de:
+
+* Kubernetes
+* Istio
+* PostgreSQL
+* Aplicación ToDo
+* Componentes del clúster
+
+Endpoint de métricas de la aplicación:
+
+```text
+/metrics
+```
+# Exposición Pública con Ngrok
+
+Para facilitar la demostración remota de la plataforma se utilizó Ngrok.
+
+Configuración:
+
+```bash
+kubectl port-forward svc/todo-frontend 8080:80 -n todo
+
+ngrok http 8080
+```
+
+URL pública generada durante la validación:
+
+```text
+https://dash-syrup-frequency.ngrok-free.dev
+```
+
+Consideraciones:
+
+* Plan gratuito de Ngrok.
+* Un único túnel simultáneo.
+* La URL cambia en cada sesión.
+* No requiere modificaciones en la red local.
+* Permite acceso HTTPS público para demostraciones y revisiones remotas.
+
