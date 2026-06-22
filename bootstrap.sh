@@ -20,24 +20,24 @@ infra() {
   "$HELM" repo add metallb https://metallb.github.io/metallb --force-update
   "$HELM" repo add longhorn https://charts.longhorn.io --force-update
   "$HELM" repo add cnpg https://cloudnative-pg.github.io/charts --force-update
-  "$HELM" upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --version v1.20.2 --set crds.enabled=true --wait
-  "$HELM" upgrade --install metallb metallb/metallb -n metallb-system --create-namespace --version 0.16.1 --set speaker.frr.enabled=false --wait
-  "$HELM" upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --version 1.12.0 --set preUpgradeChecker.jobEnabled=false --set persistence.defaultClassReplicaCount=2 --wait --timeout 30m
-  "$HELM" upgrade --install cloudnative-pg cnpg/cloudnative-pg -n cnpg-system --create-namespace --version 0.28.3 --wait
+  "$HELM" upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --version v1.20.2 --set crds.enabled=true --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
+  "$HELM" upgrade --install metallb metallb/metallb -n metallb-system --create-namespace --version 0.16.1 --set frrk8s.enabled=false --set-json 'controller.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --set-json 'speaker.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
+  "$HELM" upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --version 1.12.0 --set preUpgradeChecker.jobEnabled=false --set-json 'global.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --set-string defaultSettings.systemManagedComponentsNodeSelector='node-role.kubernetes.io/worker:true' --set persistence.defaultClassReplicaCount=2 --wait --timeout 30m
+  "$HELM" upgrade --install cloudnative-pg cnpg/cloudnative-pg -n cnpg-system --create-namespace --version 0.28.3 --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
 }
 
 gateway() {
   require "$HELM"; require "$KUBECTL"
   "$HELM" repo add istio https://istio-release.storage.googleapis.com/charts --force-update
   "$HELM" upgrade --install istio-base istio/base -n istio-system --create-namespace --version 1.30.1 --wait
-  "$HELM" upgrade --install istiod istio/istiod -n istio-system --version 1.30.1 --wait
+  "$HELM" upgrade --install istiod istio/istiod -n istio-system --version 1.30.1 --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
   "$KUBECTL" apply -k infra/platform
 }
 
 argocd() {
   require "$HELM"; require "$KUBECTL"
   "$HELM" repo add argo https://argoproj.github.io/argo-helm --force-update
-  "$HELM" upgrade --install argo-cd argo/argo-cd -n argocd --create-namespace --set configs.params.server\\.insecure=true --wait --timeout 15m
+  "$HELM" upgrade --install argo-cd argo/argo-cd -n argocd --create-namespace --set configs.params.server\\.insecure=true --set-json 'global.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait --timeout 15m
   "$KUBECTL" apply -f root/root-app.yaml
 }
 

@@ -35,6 +35,8 @@ spec:
       valuesObject:
         crds:
           enabled: true
+        nodeSelector:
+          node-role.kubernetes.io/worker: "true"
   destination:
     server: https://kubernetes.default.svc
     namespace: cert-manager
@@ -58,9 +60,14 @@ spec:
     helm:
       releaseName: metallb
       valuesObject:
+        frrk8s:
+          enabled: false
+        controller:
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
         speaker:
-          frr:
-            enabled: false
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
   destination:
     server: https://kubernetes.default.svc
     namespace: metallb-system
@@ -86,6 +93,9 @@ spec:
       valuesObject:
         preUpgradeChecker:
           jobEnabled: false
+        global:
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
         persistence:
           defaultClass: true
           defaultClassReplicaCount: 2
@@ -93,6 +103,7 @@ spec:
           defaultReplicaCount: 2
           replicaAutoBalance: best-effort
           storageMinimalAvailablePercentage: 10
+          systemManagedComponentsNodeSelector: node-role.kubernetes.io/worker:true
   destination:
     server: https://kubernetes.default.svc
     namespace: longhorn-system
@@ -115,6 +126,9 @@ spec:
     targetRevision: 0.28.3
     helm:
       releaseName: cloudnative-pg
+      valuesObject:
+        nodeSelector:
+          node-role.kubernetes.io/worker: "true"
   destination:
     server: https://kubernetes.default.svc
     namespace: cnpg-system
@@ -160,6 +174,8 @@ spec:
     helm:
       releaseName: istiod
       valuesObject:
+        nodeSelector:
+          node-role.kubernetes.io/worker: "true"
         meshConfig:
           enableTracing: true
           defaultConfig:
@@ -196,6 +212,8 @@ spec:
           enabled: false
         grafana:
           adminPassword: admin
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
           sidecar:
             dashboards:
               enabled: true
@@ -208,6 +226,8 @@ spec:
                 datasource: Prometheus
         prometheus:
           prometheusSpec:
+            nodeSelector:
+              node-role.kubernetes.io/worker: "true"
             retention: 24h
             serviceMonitorSelectorNilUsesHelmValues: false
             podMonitorSelectorNilUsesHelmValues: false
@@ -240,6 +260,9 @@ spec:
     helm:
       releaseName: kiali
       valuesObject:
+        deployment:
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
         auth:
           strategy: anonymous
         external_services:
@@ -280,6 +303,8 @@ spec:
             type: filesystem
         singleBinary:
           replicas: 1
+          nodeSelector:
+            node-role.kubernetes.io/worker: "true"
           persistence:
             enabled: true
             storageClass: longhorn

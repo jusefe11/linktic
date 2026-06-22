@@ -1,16 +1,16 @@
 # Plataforma Kubernetes Cloud Native - Prueba Ingeniero Cloud Senior
 
-Implementación reproducible de la prueba técnica: K3s con etcd, Gateway API, Istio, ArgoCD, cert-manager, MetalLB, Longhorn, CloudNativePG, una aplicación ToDo de dos microservicios y observabilidad completa.
+Implementación reproducible de la prueba técnica: K3s con SQLite, Gateway API, Istio, ArgoCD, cert-manager, MetalLB, Longhorn, CloudNativePG, una aplicación ToDo de dos microservicios y observabilidad completa.
 
 ## Arquitectura
 
 | Nodo | IP | Rol |
 |---|---:|---|
-| master | 192.168.1.50 | control-plane + etcd |
+| master | 192.168.1.50 | control-plane + SQLite |
 | worker1 | 192.168.1.51 | worker (agente K3s) |
 | worker2 | 192.168.1.53 | worker (agente K3s) |
 
-Se utiliza K3s porque reduce el consumo del laboratorio sin abandonar APIs estándar. El maestro ejecuta el control-plane y etcd; los dos workers funcionan como agentes. Esta topología evita la contención de I/O de tres miembros etcd sobre discos VirtualBox y hace la demostración reproducible. La alta disponibilidad evaluada se implementa en la capa de datos con tres instancias CloudNativePG y volúmenes Longhorn replicados entre nodos. Traefik, ServiceLB y Local Path están deshabilitados: Istio implementa Gateway API, MetalLB anuncia las IP y Longhorn proporciona almacenamiento replicado.
+Se utiliza K3s porque reduce el consumo del laboratorio sin abandonar APIs estándar. El maestro ejecuta el control-plane con SQLite y los dos workers funcionan como agentes. SQLite evita la contención de I/O de etcd sobre discos VirtualBox y hace la demostración reproducible. La alta disponibilidad evaluada se implementa en la capa de datos con tres instancias CloudNativePG y volúmenes Longhorn replicados entre los workers. Traefik, ServiceLB y Local Path están deshabilitados: Istio implementa Gateway API, MetalLB anuncia las IP y Longhorn proporciona almacenamiento replicado.
 
 El flujo de una operación es:
 
