@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: todo-api-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  todo-api.json: |
+    {
+      "annotations":{"list":[]},
+      "editable":true,
+      "panels":[
+        {"type":"timeseries","title":"Requests per second","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"sum(rate(todo_api_http_requests_total[5m])) by (route)","legendFormat":"{{route}}"}],"gridPos":{"h":8,"w":12,"x":0,"y":0}},
+        {"type":"timeseries","title":"Latency p95","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(todo_api_http_request_duration_seconds_bucket[5m])) by (le, route))","legendFormat":"{{route}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":0}},
+        {"type":"timeseries","title":"PostgreSQL connections","datasource":{"type":"prometheus","uid":"prometheus"},"targets":[{"expr":"cnpg_pg_stat_database_numbackends{datname=\"tododb\"}","legendFormat":"connections"}],"gridPos":{"h":8,"w":24,"x":0,"y":8}}
+      ],
+      "schemaVersion":39,
+      "tags":["todo","cnpg"],
+      "templating":{"list":[]},
+      "time":{"from":"now-1h","to":"now"},
+      "title":"ToDo API and CloudNativePG",
+      "uid":"todo-cnpg"
+    }

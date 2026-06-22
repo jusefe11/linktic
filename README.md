@@ -1,260 +1,126 @@
-# Plataforma Kubernetes Cloud Native - GitOps con ArgoCD
+# Plataforma Kubernetes Cloud Native - Prueba Ingeniero Cloud Senior
 
-## Objetivo
+Implementación reproducible de la prueba técnica: K3s con etcd, Gateway API, Istio, ArgoCD, cert-manager, MetalLB, Longhorn, CloudNativePG, una aplicación ToDo de dos microservicios y observabilidad completa.
 
-Implementar una plataforma Kubernetes cloud-native basada en GitOps utilizando ArgoCD, Gateway API, Istio, PostgreSQL, Observabilidad y exposición pública mediante Ngrok.
+## Arquitectura
 
----
+| Nodo | IP | Rol |
+|---|---:|---|
+| master | 192.168.1.50 | control-plane + etcd |
+| worker1 | 192.168.1.51 | worker (agente K3s) |
+| worker2 | 192.168.1.53 | worker (agente K3s) |
 
-# Prerrequisitos
+Se utiliza K3s porque reduce el consumo del laboratorio sin abandonar APIs estándar. El maestro ejecuta el control-plane y etcd; los dos workers funcionan como agentes. Esta topología evita la contención de I/O de tres miembros etcd sobre discos VirtualBox y hace la demostración reproducible. La alta disponibilidad evaluada se implementa en la capa de datos con tres instancias CloudNativePG y volúmenes Longhorn replicados entre nodos. Traefik, ServiceLB y Local Path están deshabilitados: Istio implementa Gateway API, MetalLB anuncia las IP y Longhorn proporciona almacenamiento replicado.
 
-## Hardware
+El flujo de una operación es:
 
-* 1 nodo Master
-* 2 nodos Worker
-* Ubuntu Server 24.04 LTS
-* 4 vCPU por nodo
-* 8 GB RAM por nodo
-* 50 GB disco por nodo
+`Navegador -> Gateway Istio -> todo-frontend -> Gateway Istio -> todo-api -> CloudNativePG`
 
-## Software
+El frontend vuelve a entrar por el Gateway al llamar a la API. Las cabeceras B3 se propagan en Nginx y OpenTelemetry instrumenta Express y PostgreSQL para producir trazas correlacionadas.
 
-* Git
-* Docker
-* kubectl
-* Helm
-* ArgoCD CLI
-* Istioctl
-* Ngrok
-* K3s
+## Versiones fijadas
 
----
+- Kubernetes Gateway API 1.4.1
+- K3s 1.35.5+k3s1
+- Istio 1.30.1
+- cert-manager 1.20.2
+- MetalLB 0.16.1
+- Longhorn 1.12.0
+- CloudNativePG 1.29.1 (chart 0.28.3)
+- kube-prometheus-stack 86.3.2
+- Kiali 2.27.0
 
-# Justificación de K3s
+## Prerrequisitos de los nodos
 
-Se seleccionó K3s en lugar de kubeadm debido a:
+- Ubuntu 24.04, swap deshabilitado y relojes sincronizados con Chrony.
+- `open-iscsi`, `nfs-common`, `curl`, `jq` y módulos `overlay`/`br_netfilter`.
+- Puertos internos de K3s, etcd, VXLAN e iSCSI permitidos entre las tres IP.
+- Los nodos deben acceder a Internet para descargar charts e imágenes.
 
-* Menor consumo de recursos.
-* Instalación simplificada.
-* Integración nativa con Local Path Provisioner.
-* Menor complejidad operativa para entornos de laboratorio.
-* Compatibilidad total con Kubernetes estándar.
+## Instalación
 
----
+Los componentes se pueden desplegar por bloques:
 
-# Hostnames
-
-Agregar en /etc/hosts:
-
-192.168.1.50 argocd.local
-192.168.1.50 grafana.local
-192.168.1.50 jaeger.local
-192.168.1.50 kiali.local
-192.168.1.50 registry.local
-192.168.1.50 todo.local
-192.168.1.50 api.todo.local
-192.168.1.50 longhorn.local
-
----
-
-# Estructura del Repositorio
-
-apps/
-infra/
-observability/
-root/
-
----
-
-# Despliegue desde Cero
-
-## 1. Cluster
-
-Instalar K3s en Master y Workers.
-
-## 2. Infraestructura
-
-Instalar:
-
-* Gateway API CRDs
-* Cert Manager
-* MetalLB
-* Longhorn (evaluado)
-* CloudNativePG
-
-## 3. Service Mesh
-
-Instalar Istio utilizando perfil demo.
-
-## 4. GitOps
-
-Instalar ArgoCD.
-
-Registrar repositorio:
-
-argocd repo add https://github.com/jusefe11/linktic.git
-
-Aplicar:
-
-kubectl apply -f root/root-app.yaml
-
-## 5. Observabilidad
-
-Instalar:
-
-* Prometheus
-* Grafana
-* Jaeger
-* Kiali
-* Loki
-
-## 6. Exposición Pública
-
-kubectl port-forward svc/todo-frontend 8080:80 -n todo
-
-ngrok http 8080
-
----
-
-# Decisiones de Diseño
-
-## GitOps
-
-Patrón App of Apps con ArgoCD.
-
-## Gateway API
-
-Implementación mediante Istio GatewayClass.
-
-## Service Mesh
-
-Istio para observabilidad, métricas y trazabilidad.
-
-## Persistencia
-
-Evaluación de Longhorn.
-
-Persistencia final mediante Local Path Provisioner.
-
-## Observabilidad
-
-Prometheus
-Grafana
-Jaeger
-Kiali
-Loki
-
----
-
-# Aplicación ToDo
-
-## Todo API
-
-Tecnologías:
-
-* Node.js
-* Express
-* PostgreSQL
-
-Endpoints:
-
-GET /healthz
-GET /readyz
-GET /metrics
-GET /tasks
-GET /tasks/{id}
-POST /tasks
-PUT /tasks/{id}
-DELETE /tasks/{id}
-
-## Todo Frontend
-
-Aplicación HTTP publicada mediante Gateway API e Istio.
-
----
-
-# Base de Datos
-
-## PostgreSQL
-
-Persistencia mediante PVC.
-
-Configuración mediante:
-
-* ConfigMap
-* Secret
-
----
-
-# Observabilidad
-
-## Grafana
-
-Host:
-
-grafana.local
-
-## Jaeger
-
-Host:
-
-jaeger.local
-
-## Kiali
-
-Host:
-
-kiali.local
-
-## Loki
-
-Centralización de logs.
-
----
-
-# Exposición Pública
-
-Se utilizó Ngrok para compartir la aplicación mediante HTTPS.
-
-Consideraciones:
-
-* Plan gratuito.
-* 1 túnel simultáneo.
-* URL temporal.
-* No requiere cambios de red.
-
----
-
-# Estado Actual
-
-| Componente      | Estado    |
-| --------------- | --------- |
-| Kubernetes K3s  | Operativo |
-| ArgoCD          | Operativo |
-| Gateway API     | Operativo |
-| Cert Manager    | Operativo |
-| Istio           | Operativo |
-| Docker Registry | Operativo |
-| PostgreSQL      | Operativo |
-| Todo Frontend   | Operativo |
-| Prometheus      | Operativo |
-| Grafana         | Operativo |
-| Jaeger          | Operativo |
-| Kiali           | Operativo |
-| Loki            | Operativo |
-| Ngrok           | Operativo |
-| CloudNativePG   | Parcial   |
-| Longhorn        | Evaluado  |
-
----
-
-# Bootstrap
-
-El repositorio incluye bootstrap.sh con los siguientes bloques:
-
+```bash
 ./bootstrap.sh cluster
 ./bootstrap.sh infra
 ./bootstrap.sh gateway
 ./bootstrap.sh argocd
 ./bootstrap.sh observability
 ./bootstrap.sh expose
+./bootstrap.sh status
+```
+
+La `Application` raíz inicia el patrón App of Apps:
+
+```bash
+kubectl apply -f root/root-app.yaml
+kubectl get applications -n argocd -w
+```
+
+Las Sync Waves aplican primero CRDs, cert-manager e infraestructura; después Istio y observabilidad; finalmente configuración, base de datos y microservicios. Todas las aplicaciones usan auto-sync, prune y self-heal.
+
+## Imágenes y registry local
+
+El registry se publica como NodePort en `192.168.1.50:30500`. Cada nodo debe tener `/etc/rancher/k3s/registries.yaml`:
+
+```yaml
+mirrors:
+  "192.168.1.50:30500":
+    endpoint:
+      - "http://192.168.1.50:30500"
+```
+
+Construcción desde el maestro:
+
+```bash
+docker build -t 192.168.1.50:30500/todo-api:v1 apps/todo-api
+docker build -t 192.168.1.50:30500/todo-frontend:v1 apps/todo-frontend
+docker push 192.168.1.50:30500/todo-api:v1
+docker push 192.168.1.50:30500/todo-frontend:v1
+```
+
+## DNS local y HTTPS
+
+MetalLB reserva `192.168.1.240` para el Gateway. Agregar al archivo `hosts`:
+
+```text
+192.168.1.240 todo.local api.todo.local argocd.local grafana.local kiali.local jaeger.local longhorn.local registry.local
+```
+
+cert-manager crea una CA raíz y un certificado para los hosts. Para confiar en ella:
+
+```bash
+kubectl get secret local-root-ca -n cert-manager -o jsonpath='{.data.tls\.crt}' | base64 -d > local-root-ca.crt
+```
+
+Importar `local-root-ca.crt` en el almacén de autoridades raíz del sistema o navegador.
+
+## Accesos
+
+| Servicio | URL |
+|---|---|
+| ToDo | https://todo.local |
+| ArgoCD | https://argocd.local |
+| Grafana | https://grafana.local |
+| Kiali | https://kiali.local |
+| Jaeger | https://jaeger.local |
+| Longhorn | https://longhorn.local |
+| Registry | https://registry.local/v2/ |
+
+Credenciales de laboratorio:
+
+- ArgoCD: usuario `admin`; obtener contraseña con `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
+- Grafana: `admin` / `admin`.
+
+## Decisiones principales
+
+- Gateway API sustituye Ingress y separa infraestructura (`Gateway`) de rutas de aplicación (`HTTPRoute`). TLS termina en el Gateway para centralizar certificados y políticas.
+- Longhorn mantiene dos réplicas por volumen. Cada instancia CNPG solicita un PVC independiente de 5 GiB.
+- CloudNativePG ejecuta una primaria y dos réplicas, publica el Service `tododb-rw` y expone métricas mediante `PodMonitor`.
+- mTLS estricto se aplica a los dos microservicios. PostgreSQL se excluye de la inyección de sidecar para no interferir con la gestión del operador.
+- El túnel público usa Cloudflare Quick Tunnel, alternativa aceptada por el enunciado, sin almacenar tokens en Git.
+
+## Sustentación
+
+La secuencia y los comandos de evidencia se encuentran en [docs/REVIEW.md](docs/REVIEW.md).

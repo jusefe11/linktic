@@ -1,0 +1,5 @@
+tmp/
+*.pdf
+.env
+local-root-ca.crt
+

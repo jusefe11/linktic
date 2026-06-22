@@ -1,0 +1,87 @@
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: todo-api-strict-mtls
+  namespace: todo
+spec:
+  selector:
+    matchLabels:
+      app: todo-api
+  mtls:
+    mode: STRICT
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: todo-frontend-strict-mtls
+  namespace: todo
+spec:
+  selector:
+    matchLabels:
+      app: todo-frontend
+  mtls:
+    mode: STRICT
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: todo-api-resilience
+  namespace: todo
+spec:
+  hosts:
+    - todo-api.todo.svc.cluster.local
+  http:
+    - timeout: 3s
+      retries:
+        attempts: 2
+        perTryTimeout: 1s
+        retryOn: 5xx,reset,connect-failure
+      route:
+        - destination:
+            host: todo-api.todo.svc.cluster.local
+            port:
+              number: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: todo-api-ingress
+  namespace: todo
+spec:
+  podSelector:
+    matchLabels:
+      app: todo-api
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: todo-frontend
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-from-api-only
+  namespace: todo
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: tododb
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: todo-api
+      ports:
+        - protocol: TCP
+          port: 5432
