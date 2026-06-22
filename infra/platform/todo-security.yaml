@@ -85,3 +85,27 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # PostgreSQL instances must communicate for streaming replication,
+    # leader election, and failover coordination.
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: tododb
+    # The CNPG operator queries each instance manager over its status API.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+      ports:
+        - protocol: TCP
+          port: 8000
+    # Prometheus needs access to the PostgreSQL and instance-manager metrics.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9187
+        - protocol: TCP
+          port: 8000

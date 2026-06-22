@@ -23,7 +23,10 @@ infra() {
   "$HELM" upgrade --install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --version v1.20.2 --set crds.enabled=true --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
   "$HELM" upgrade --install metallb metallb/metallb -n metallb-system --create-namespace --version 0.16.1 --set frrk8s.enabled=false --set-json 'controller.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --set-json 'speaker.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
   "$HELM" upgrade --install longhorn longhorn/longhorn -n longhorn-system --create-namespace --version 1.12.0 --set preUpgradeChecker.jobEnabled=false --set-json 'global.nodeSelector={"node-role.kubernetes.io/worker":"true"}' --set-string defaultSettings.systemManagedComponentsNodeSelector='node-role.kubernetes.io/worker:true' --set persistence.defaultClassReplicaCount=2 --wait --timeout 30m
-  "$HELM" upgrade --install cloudnative-pg cnpg/cloudnative-pg -n cnpg-system --create-namespace --version 0.28.3 --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}' --wait
+  "$HELM" upgrade --install cloudnative-pg cnpg/cloudnative-pg -n cnpg-system --create-namespace --version 0.28.3 --set-json 'nodeSelector={"node-role.kubernetes.io/worker":"true"}'
+  # VirtualBox can make Kubernetes API discovery exceed CNPG's 30 s startup window.
+  "$KUBECTL" patch deployment cloudnative-pg -n cnpg-system --type=strategic -p '{"spec":{"template":{"spec":{"containers":[{"name":"manager","startupProbe":{"failureThreshold":60,"periodSeconds":5,"timeoutSeconds":5},"livenessProbe":{"failureThreshold":6,"periodSeconds":10,"timeoutSeconds":5},"readinessProbe":{"failureThreshold":6,"periodSeconds":10,"timeoutSeconds":5},"resources":{"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"500m","memory":"512Mi"}}}]}}}}'
+  "$KUBECTL" rollout status deployment/cloudnative-pg -n cnpg-system --timeout=10m
 }
 
 gateway() {
