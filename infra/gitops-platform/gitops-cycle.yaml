@@ -4,4 +4,4 @@ metadata:
   name: gitops-cycle-demo
   namespace: argocd
 data:
-  version: "v2"
+  version: "v3"
