@@ -1,126 +1,100 @@
-# Plataforma Kubernetes Cloud Native - Prueba Ingeniero Cloud Senior
+# Prueba técnica Cloud Native
 
-Implementación reproducible de la prueba técnica: K3s con SQLite, Gateway API, Istio, ArgoCD, cert-manager, MetalLB, Longhorn, CloudNativePG, una aplicación ToDo de dos microservicios y observabilidad completa.
+## Estado actual: fase 1 completada
 
-## Arquitectura
+Cluster Kubernetes sobre tres máquinas virtuales VirtualBox, sin nodos basados en Docker:
 
 | Nodo | IP | Rol |
 |---|---:|---|
-| master | 192.168.1.50 | control-plane + SQLite |
-| worker1 | 192.168.1.51 | worker (agente K3s) |
-| worker2 | 192.168.1.53 | worker (agente K3s) |
+| `master` | `192.168.1.50` | K3s server, control-plane y etcd |
+| `worker1` | `192.168.1.51` | K3s agent |
+| `worker2` | `192.168.1.53` | K3s agent |
 
-Se utiliza K3s porque reduce el consumo del laboratorio sin abandonar APIs estándar. El maestro ejecuta el control-plane con SQLite y los dos workers funcionan como agentes. SQLite evita la contención de I/O de etcd sobre discos VirtualBox y hace la demostración reproducible. La alta disponibilidad evaluada se implementa en la capa de datos con tres instancias CloudNativePG y volúmenes Longhorn replicados entre los workers. Traefik, ServiceLB y Local Path están deshabilitados: Istio implementa Gateway API, MetalLB anuncia las IP y Longhorn proporciona almacenamiento replicado.
+Componentes instalados en esta fase:
 
-El flujo de una operación es:
+- K3s `v1.36.1+k3s1` con etcd embebido.
+- Calico `v3.32.0` como CNI, con VXLAN y soporte completo de `NetworkPolicy`.
+- MetalLB `v0.16.1` en modo Layer 2.
+- Pool MetalLB: `192.168.1.240-192.168.1.250`.
 
-`Navegador -> Gateway Istio -> todo-frontend -> Gateway Istio -> todo-api -> CloudNativePG`
+No se han instalado todavía Istio, Gateway API, ArgoCD, Longhorn ni observabilidad.
 
-El frontend vuelve a entrar por el Gateway al llamar a la API. Las cabeceras B3 se propagan en Nginx y OpenTelemetry instrumenta Express y PostgreSQL para producir trazas correlacionadas.
+## Elección de bootstrap: K3s
 
-## Versiones fijadas
+Se eligió K3s porque el laboratorio se ejecuta en VMs con recursos compartidos y K3s reduce memoria, procesos y tiempo de bootstrap sin abandonar conformidad Kubernetes. Usa APIs estándar, containerd y permite reemplazar sus componentes integrados.
 
-- Kubernetes Gateway API 1.4.1
-- K3s 1.35.5+k3s1
-- Istio 1.30.1
-- cert-manager 1.20.2
-- MetalLB 0.16.1
-- Longhorn 1.12.0
-- CloudNativePG 1.29.1 (chart 0.28.3)
-- kube-prometheus-stack 86.3.2
-- Kiali 2.27.0
+Frente a kubeadm, esta opción deja más tiempo de la prueba para demostrar Gateway API, GitOps, almacenamiento y observabilidad. Para mantener fidelidad a producción se usó `--cluster-init`, por lo que el datastore es etcd y no SQLite. El miembro único de etcd es suficiente para este laboratorio; en producción se usarían tres nodos server para mantener quorum.
 
-## Prerrequisitos de los nodos
+Se deshabilitaron Flannel, ServiceLB, Traefik y Local Path:
 
-- Ubuntu 24.04, swap deshabilitado y relojes sincronizados con Chrony.
-- `open-iscsi`, `nfs-common`, `curl`, `jq` y módulos `overlay`/`br_netfilter`.
-- Puertos internos de K3s, etcd, VXLAN e iSCSI permitidos entre las tres IP.
-- Los nodos deben acceder a Internet para descargar charts e imágenes.
+- Calico reemplaza Flannel y ofrece `NetworkPolicy` completa para la aplicación e Istio.
+- MetalLB reemplaza ServiceLB y entrega IPs reales de la LAN mediante ARP/NDP.
+- Istio será el proveedor posterior de Gateway API.
+- Longhorn será la StorageClass posterior.
 
-## Instalación
+Calico usa VXLAN, evitando depender de sesiones BGP en la red VirtualBox. La configuración CNI habilita `allow_ip_forwarding`, requerido para el tráfico redirigido por sidecars de Istio.
 
-Los componentes se pueden desplegar por bloques:
+## Bootstrap reproducible
+
+En el master:
 
 ```bash
-./bootstrap.sh cluster
-./bootstrap.sh infra
-./bootstrap.sh gateway
-./bootstrap.sh argocd
-./bootstrap.sh observability
-./bootstrap.sh expose
-./bootstrap.sh status
+curl -sfL https://get.k3s.io -o /tmp/install-k3s.sh
+sudo env INSTALL_K3S_VERSION='v1.36.1+k3s1' sh /tmp/install-k3s.sh server \
+  --cluster-init \
+  --write-kubeconfig-mode=644 \
+  --flannel-backend=none \
+  --disable-network-policy \
+  --disable=servicelb \
+  --disable=traefik \
+  --disable=local-storage \
+  --node-taint='node-role.kubernetes.io/control-plane=true:NoSchedule' \
+  --secrets-encryption
 ```
 
-La `Application` raíz inicia el patrón App of Apps:
+El manifiesto oficial de Calico se fija en `v3.32.0`. Antes de aplicarlo se configura el CIDR `10.42.0.0/16`, `allow_ip_forwarding`, backend VXLAN y sondas exclusivas de Felix.
+
+Los workers se unen con el token de `/var/lib/rancher/k3s/server/node-token`. En Kubernetes 1.36 las etiquetas reservadas de rol se aplican después desde la API:
 
 ```bash
-kubectl apply -f root/root-app.yaml
-kubectl get applications -n argocd -w
+kubectl label node worker1 node-role.kubernetes.io/worker=true
+kubectl label node worker2 node-role.kubernetes.io/worker=true
 ```
 
-Las Sync Waves aplican primero CRDs, cert-manager e infraestructura; después Istio y observabilidad; finalmente configuración, base de datos y microservicios. Todas las aplicaciones usan auto-sync, prune y self-heal.
+MetalLB se instala desde su manifiesto nativo oficial y la configuración L2 versionada se encuentra en [infra/metallb/l2-config.yaml](infra/metallb/l2-config.yaml).
 
-## Imágenes y registry local
+## Evidencia para sustentación
 
-El registry se publica como NodePort en `192.168.1.50:30500`. Cada nodo debe tener `/etc/rancher/k3s/registries.yaml`:
-
-```yaml
-mirrors:
-  "192.168.1.50:30500":
-    endpoint:
-      - "http://192.168.1.50:30500"
-```
-
-Construcción desde el maestro:
+Ejecutar desde el master:
 
 ```bash
-docker build -t 192.168.1.50:30500/todo-api:v1 apps/todo-api
-docker build -t 192.168.1.50:30500/todo-frontend:v1 apps/todo-frontend
-docker push 192.168.1.50:30500/todo-api:v1
-docker push 192.168.1.50:30500/todo-frontend:v1
+# 1. etcd y API saludables
+sudo k3s kubectl get --raw='/readyz?verbose' | grep -E 'etcd|readyz check passed'
+
+# 2. Los tres nodos Ready
+sudo k3s kubectl get nodes -o wide
+
+# 3. CNI Calico saludable en los tres nodos
+sudo k3s kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
+sudo k3s kubectl get deployment calico-kube-controllers -n kube-system
+sudo k3s kubectl get ippool default-ipv4-ippool \
+  -o custom-columns=NAME:.metadata.name,CIDR:.spec.cidr,IPIP:.spec.ipipMode,VXLAN:.spec.vxlanMode
+
+# 4. MetalLB L2 saludable y una IP externa asignada
+sudo k3s kubectl get pods -n metallb-system -o wide
+sudo k3s kubectl get ipaddresspool,l2advertisement -n metallb-system
+sudo k3s kubectl get service metallb-smoke -n kube-system -o wide
+
+# 5. Prueba real del LoadBalancer
+curl -sk -o /dev/null -w 'HTTP=%{http_code} CONNECT=%{time_connect}s\n' \
+  https://192.168.1.240/
 ```
 
-## DNS local y HTTPS
+Resultados esperados:
 
-MetalLB reserva `192.168.1.240` para el Gateway. Agregar al archivo `hosts`:
-
-```text
-192.168.1.240 todo.local api.todo.local argocd.local grafana.local kiali.local jaeger.local longhorn.local registry.local
-```
-
-cert-manager crea una CA raíz y un certificado para los hosts. Para confiar en ella:
-
-```bash
-kubectl get secret local-root-ca -n cert-manager -o jsonpath='{.data.tls\.crt}' | base64 -d > local-root-ca.crt
-```
-
-Importar `local-root-ca.crt` en el almacén de autoridades raíz del sistema o navegador.
-
-## Accesos
-
-| Servicio | URL |
-|---|---|
-| ToDo | https://todo.local |
-| ArgoCD | https://argocd.local |
-| Grafana | https://grafana.local |
-| Kiali | https://kiali.local |
-| Jaeger | https://jaeger.local |
-| Longhorn | https://longhorn.local |
-| Registry | https://registry.local/v2/ |
-
-Credenciales de laboratorio:
-
-- ArgoCD: usuario `admin`; obtener contraseña con `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
-- Grafana: `admin` / `admin`.
-
-## Decisiones principales
-
-- Gateway API sustituye Ingress y separa infraestructura (`Gateway`) de rutas de aplicación (`HTTPRoute`). TLS termina en el Gateway para centralizar certificados y políticas.
-- Longhorn mantiene dos réplicas por volumen. Cada instancia CNPG solicita un PVC independiente de 5 GiB.
-- CloudNativePG ejecuta una primaria y dos réplicas, publica el Service `tododb-rw` y expone métricas mediante `PodMonitor`.
-- mTLS estricto se aplica a los dos microservicios. PostgreSQL se excluye de la inyección de sidecar para no interferir con la gestión del operador.
-- El túnel público usa Cloudflare Quick Tunnel, alternativa aceptada por el enunciado, sin almacenar tokens en Git.
-
-## Sustentación
-
-La secuencia y los comandos de evidencia se encuentran en [docs/REVIEW.md](docs/REVIEW.md).
+- `etcd ok`, `etcd-readiness ok` y `readyz check passed`.
+- `master`, `worker1` y `worker2` en `Ready`.
+- Tres pods `calico-node` en `1/1 Running`, sin reinicios.
+- Un controlador y tres speakers MetalLB en `Running`.
+- El servicio `metallb-smoke` con `EXTERNAL-IP 192.168.1.240`.
+- Respuesta HTTP `403` desde metrics-server. El código es esperado por falta de credenciales y demuestra que ARP, MetalLB, kube-proxy, Calico y el endpoint funcionan extremo a extremo.
