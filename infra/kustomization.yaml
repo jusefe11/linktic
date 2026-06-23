@@ -1,4 +1,4 @@
 resources:
-- metallb/app.yaml
-- longhorn/app.yaml
-- cloudnativepg/app.yaml
+  - gateway-api/app.yaml
+  - cert-manager/app.yaml
+  - metallb/app.yaml

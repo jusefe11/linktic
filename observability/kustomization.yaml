@@ -1,3 +1,4 @@
 resources:
-- prometheus/app.yaml
-- loki/app.yaml
+  - istio-base/app.yaml
+  - istiod/app.yaml
+  - gateways/app.yaml
