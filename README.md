@@ -206,12 +206,12 @@ sudo k3s kubectl -n istio-system get gateway platform-gateway
 curl -kI --resolve argocd.local:443:192.168.1.240 https://argocd.local/
 curl -I --resolve argocd.local:80:192.168.1.240 http://argocd.local/
 
-# Evidencia del ciclo GitOps: el valor vivo debe ser v2
+# Evidencia del ciclo GitOps: el valor vivo debe ser v3
 sudo k3s kubectl -n argocd get configmap gitops-cycle-demo \
   -o jsonpath='{.data.version}'; echo
 ```
 
-El ciclo completo se demostró con el commit `06f468d`: se cambió `infra/gitops-platform/gitops-cycle.yaml` de `v1` a `v2`, se hizo push a `main`, ArgoCD detectó el commit y `platform-gateway-config` volvió automáticamente a `Synced + Healthy`. El ConfigMap vivo mostró `v2` sin ejecutar `kubectl apply` sobre ese manifiesto.
+El ciclo completo se demostró nuevamente con el commit `b91a180`: se cambió `infra/gitops-platform/gitops-cycle.yaml` de `v2` a `v3`, se hizo push a `main`, ArgoCD detectó el commit y `platform-gateway-config` volvió automáticamente a `Synced + Healthy`. El ConfigMap vivo mostró `v3` sin ejecutar `kubectl apply` sobre ese manifiesto.
 
 Resultados verificados:
 
