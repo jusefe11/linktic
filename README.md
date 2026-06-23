@@ -1,6 +1,6 @@
 # Prueba técnica Cloud Native
 
-## Estado actual: fases 1 y 2 completadas
+## Estado actual: fases 1, 2 y 3 completadas
 
 Cluster Kubernetes sobre tres máquinas virtuales VirtualBox, sin nodos basados en Docker:
 
@@ -20,8 +20,9 @@ Componentes instalados en esta fase:
 - cert-manager `v1.20.2` con CA raíz local.
 - Istio `1.30.1` como controlador de Gateway API.
 - Gateway principal HTTP/HTTPS en `192.168.1.240`.
+- ArgoCD `v3.4.4` mediante App of Apps y sincronización automática.
 
-No se han instalado todavía ArgoCD, Longhorn, CloudNativePG ni observabilidad.
+Longhorn, CloudNativePG y el stack de observabilidad permanecen declarados en el repositorio y se activan en sus fases correspondientes para mantener cada entrega verificable.
 
 ## Elección de bootstrap: K3s
 
@@ -133,3 +134,90 @@ Resultados esperados:
 - Certificado `wildcard-local` en `Ready=True`, emitido por `LinkTIC Local Root CA`.
 - HTTP responde `301` con `Location: https://todo.local/`.
 - HTTPS termina en `istio-envoy`; hasta desplegar la aplicación responde `404`, lo cual confirma que listener, TLS y LoadBalancer funcionan.
+
+## GitOps con ArgoCD
+
+ArgoCD `v3.4.4` está instalado en el namespace `argocd`. No se usa `port-forward`: la UI se publica mediante el `HTTPRoute` versionado en [infra/gitops-platform/argocd-route.yaml](infra/gitops-platform/argocd-route.yaml), con hostname `argocd.local` y TLS terminado por el Gateway de Istio.
+
+Agregar en el archivo `hosts` del equipo desde el que se realizará la demostración:
+
+```text
+192.168.1.240 argocd.local
+```
+
+Después se accede directamente a `https://argocd.local`. El certificado está firmado por la CA local de cert-manager; para evitar la advertencia del navegador se debe importar `LinkTIC Local Root CA` en el almacén de confianza del equipo.
+
+La contraseña inicial del usuario `admin` se obtiene sin exponerla en el repositorio:
+
+```bash
+sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+### Fuente de verdad y App of Apps
+
+El repositorio público se puede consumir directamente. Para registrarlo explícitamente desde la CLI:
+
+```bash
+argocd repo add https://github.com/jusefe11/linktic.git
+```
+
+Si el repositorio cambia a privado, el mismo comando debe incluir un token mediante `--username` y `--password`, almacenado fuera de Git.
+
+La Application raíz es [root/root-app.yaml](root/root-app.yaml). El bootstrap inicial se limita a instalar ArgoCD y aplicar este recurso:
+
+```bash
+sudo k3s kubectl apply -f root/root-app.yaml
+```
+
+La estructura declarativa es:
+
+- `root/`: Application raíz y Applications agrupadoras.
+- `apps/`: Applications de `todo-api` y `todo-frontend`.
+- `infra/`: Gateway API, cert-manager, MetalLB, Longhorn y CloudNativePG.
+- `observability/`: Istio, kube-prometheus-stack, Loki y Gateways de plataforma.
+
+Las fases futuras están versionadas pero se habilitan al abordar su punto de la prueba, evitando instalar bases de datos, almacenamiento y observabilidad antes de validarlos. Ningún Gateway ni HTTPRoute se crea manualmente: los recursos activos salen de `infra/gitops-platform/` y son propiedad de `platform-gateway-config`.
+
+### Orden mediante Sync Waves
+
+| Wave | Application | Propósito |
+|---:|---|---|
+| `-5` | `gateway-api-crds` | CRDs Standard Channel v1.4.1 |
+| `-4` | `cert-manager` | CRDs, controladores y CA local |
+| `-3` | `metallb` | LoadBalancer Layer 2 |
+| `-2` | `istio-base` | CRDs de Istio |
+| `-1` | `istiod` | Controlador Gateway API |
+| `0` | `platform-gateway-config` | namespaces, certificados, Gateway y HTTPRoutes |
+
+### Evidencia de sustentación del punto 3
+
+```bash
+# Todas las Applications deben estar Synced + Healthy
+sudo k3s kubectl -n argocd get applications.argoproj.io \
+  -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status \
+  --sort-by=.metadata.name
+
+# HTTPRoute aceptada y Gateway programado
+sudo k3s kubectl -n argocd get httproute argocd
+sudo k3s kubectl -n istio-system get gateway platform-gateway
+
+# Acceso real, sin port-forward
+curl -kI --resolve argocd.local:443:192.168.1.240 https://argocd.local/
+curl -I --resolve argocd.local:80:192.168.1.240 http://argocd.local/
+
+# Evidencia del ciclo GitOps: el valor vivo debe ser v2
+sudo k3s kubectl -n argocd get configmap gitops-cycle-demo \
+  -o jsonpath='{.data.version}'; echo
+```
+
+El ciclo completo se demostró con el commit `06f468d`: se cambió `infra/gitops-platform/gitops-cycle.yaml` de `v1` a `v2`, se hizo push a `main`, ArgoCD detectó el commit y `platform-gateway-config` volvió automáticamente a `Synced + Healthy`. El ConfigMap vivo mostró `v2` sin ejecutar `kubectl apply` sobre ese manifiesto.
+
+Resultados verificados:
+
+- nueve Applications en `Synced + Healthy`;
+- `GatewayClass istio` con `Accepted=True`;
+- `platform-gateway` con `Programmed=True` e IP `192.168.1.240`;
+- `https://argocd.local/` devuelve HTTP `200`;
+- `http://argocd.local/` devuelve HTTP `301` hacia HTTPS;
+- los tres nodos permanecen `Ready`.
