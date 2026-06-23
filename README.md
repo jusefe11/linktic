@@ -1,6 +1,6 @@
 # Prueba técnica Cloud Native
 
-## Estado actual: fase 1 completada
+## Estado actual: fases 1 y 2 completadas
 
 Cluster Kubernetes sobre tres máquinas virtuales VirtualBox, sin nodos basados en Docker:
 
@@ -16,8 +16,12 @@ Componentes instalados en esta fase:
 - Calico `v3.32.0` como CNI, con VXLAN y soporte completo de `NetworkPolicy`.
 - MetalLB `v0.16.1` en modo Layer 2.
 - Pool MetalLB: `192.168.1.240-192.168.1.250`.
+- Gateway API Standard Channel `v1.4.1`.
+- cert-manager `v1.20.2` con CA raíz local.
+- Istio `1.30.1` como controlador de Gateway API.
+- Gateway principal HTTP/HTTPS en `192.168.1.240`.
 
-No se han instalado todavía Istio, Gateway API, ArgoCD, Longhorn ni observabilidad.
+No se han instalado todavía ArgoCD, Longhorn, CloudNativePG ni observabilidad.
 
 ## Elección de bootstrap: K3s
 
@@ -63,6 +67,25 @@ kubectl label node worker2 node-role.kubernetes.io/worker=true
 
 MetalLB se instala desde su manifiesto nativo oficial y la configuración L2 versionada se encuentra en [infra/metallb/l2-config.yaml](infra/metallb/l2-config.yaml).
 
+## Gateway API con Istio
+
+La instalación respeta el orden exigido por la prueba:
+
+1. CRDs del Gateway API Standard Channel `v1.4.1`.
+2. cert-manager `v1.20.2`.
+3. Istio `1.30.1` con perfil `minimal`.
+4. CA local, certificado TLS, Gateway y HTTPRoute de redirección.
+
+Se usa la `GatewayClass istio`, registrada por Istio con el controlador `istio.io/gateway-controller`. El recurso [infra/platform/gateway.yaml](infra/platform/gateway.yaml) define:
+
+- listener HTTP en el puerto 80;
+- listener HTTPS en el puerto 443;
+- terminación TLS con el Secret `wildcard-local-tls`;
+- redirección HTTP a HTTPS mediante `RequestRedirect` con código 301;
+- IP solicitada `192.168.1.240` a MetalLB.
+
+La cadena de confianza local está declarada en [infra/platform/certificates.yaml](infra/platform/certificates.yaml): un `ClusterIssuer` autofirmado crea la CA `LinkTIC Local Root CA`; después el issuer `local-ca` firma el certificado `*.local` usado por el Gateway.
+
 ## Evidencia para sustentación
 
 Ejecutar desde el master:
@@ -80,14 +103,22 @@ sudo k3s kubectl get deployment calico-kube-controllers -n kube-system
 sudo k3s kubectl get ippool default-ipv4-ippool \
   -o custom-columns=NAME:.metadata.name,CIDR:.spec.cidr,IPIP:.spec.ipipMode,VXLAN:.spec.vxlanMode
 
-# 4. MetalLB L2 saludable y una IP externa asignada
+# 4. MetalLB L2 saludable
 sudo k3s kubectl get pods -n metallb-system -o wide
 sudo k3s kubectl get ipaddresspool,l2advertisement -n metallb-system
-sudo k3s kubectl get service metallb-smoke -n kube-system -o wide
 
-# 5. Prueba real del LoadBalancer
-curl -sk -o /dev/null -w 'HTTP=%{http_code} CONNECT=%{time_connect}s\n' \
-  https://192.168.1.240/
+# 5. GatewayClass y Gateway aceptados/programados
+sudo k3s kubectl get gatewayclass istio
+sudo k3s kubectl get gateway platform-gateway -n istio-system
+sudo k3s kubectl get service platform-gateway-istio -n istio-system
+
+# 6. Certificado y HTTPRoute
+sudo k3s kubectl get certificate wildcard-local -n istio-system
+sudo k3s kubectl get httproute redirect-http-to-https -n istio-system
+
+# 7. Prueba real de redirect y HTTPS
+curl -I -H 'Host: todo.local' http://192.168.1.240/
+curl -kI --resolve todo.local:443:192.168.1.240 https://todo.local/
 ```
 
 Resultados esperados:
@@ -96,5 +127,9 @@ Resultados esperados:
 - `master`, `worker1` y `worker2` en `Ready`.
 - Tres pods `calico-node` en `1/1 Running`, sin reinicios.
 - Un controlador y tres speakers MetalLB en `Running`.
-- El servicio `metallb-smoke` con `EXTERNAL-IP 192.168.1.240`.
-- Respuesta HTTP `403` desde metrics-server. El código es esperado por falta de credenciales y demuestra que ARP, MetalLB, kube-proxy, Calico y el endpoint funcionan extremo a extremo.
+- `GatewayClass istio` con `Accepted=True`.
+- `platform-gateway` con `Accepted=True` y `Programmed=True`.
+- Service `platform-gateway-istio` con `EXTERNAL-IP 192.168.1.240`.
+- Certificado `wildcard-local` en `Ready=True`, emitido por `LinkTIC Local Root CA`.
+- HTTP responde `301` con `Location: https://todo.local/`.
+- HTTPS termina en `istio-envoy`; hasta desplegar la aplicación responde `404`, lo cual confirma que listener, TLS y LoadBalancer funcionan.
