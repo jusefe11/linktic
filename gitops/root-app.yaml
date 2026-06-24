@@ -9,7 +9,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/caferrerb/cloud-native-k8s-test
+    repoURL: https://github.com/jusefe11/linktic
     targetRevision: main
     path: gitops/apps
     directory:

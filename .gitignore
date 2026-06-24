@@ -2,6 +2,7 @@
 infra/kubeconfig
 infra/aws-ids.env
 *.pem
+*.ppk
 infra/ca/*.key
 .istio-version
 

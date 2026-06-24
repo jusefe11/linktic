@@ -6,6 +6,6 @@ metadata:
   annotations: { argocd.argoproj.io/sync-wave: "5" }
 spec:
   project: default
-  source: { repoURL: https://github.com/caferrerb/cloud-native-k8s-test, targetRevision: main, path: gitops/manifests/observability }
+  source: { repoURL: https://github.com/jusefe11/linktic, targetRevision: main, path: gitops/manifests/observability }
   destination: { server: https://kubernetes.default.svc, namespace: istio-system }
   syncPolicy: { automated: { prune: false, selfHeal: true } }

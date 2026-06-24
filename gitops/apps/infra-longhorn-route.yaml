@@ -6,6 +6,6 @@ metadata:
   annotations: { argocd.argoproj.io/sync-wave: "5" }
 spec:
   project: default
-  source: { repoURL: https://github.com/caferrerb/cloud-native-k8s-test, targetRevision: main, path: gitops/manifests/longhorn-route }
+  source: { repoURL: https://github.com/jusefe11/linktic, targetRevision: main, path: gitops/manifests/longhorn-route }
   destination: { server: https://kubernetes.default.svc, namespace: longhorn-system }
   syncPolicy: { automated: { prune: true, selfHeal: true } }

@@ -6,6 +6,6 @@ metadata:
   annotations: { argocd.argoproj.io/sync-wave: "6" }
 spec:
   project: default
-  source: { repoURL: https://github.com/caferrerb/cloud-native-k8s-test, targetRevision: main, path: gitops/manifests/todo }
+  source: { repoURL: https://github.com/jusefe11/linktic, targetRevision: main, path: gitops/manifests/todo }
   destination: { server: https://kubernetes.default.svc, namespace: todo }
   syncPolicy: { automated: { prune: false, selfHeal: false }, syncOptions: [CreateNamespace=true] }
