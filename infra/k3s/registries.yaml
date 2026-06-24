@@ -1,0 +1,7 @@
+# /etc/rancher/k3s/registries.yaml on EVERY node. Makes containerd pull from the in-cluster
+# registry over plain HTTP. Image refs use 172.31.9.150:30500/<name>:<tag>.
+# After writing, restart k3s (server) / k3s-agent (agents).
+mirrors:
+  "172.31.9.150:30500":
+    endpoint:
+      - "http://172.31.9.150:30500"

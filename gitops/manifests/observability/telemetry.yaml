@@ -1,0 +1,8 @@
+# Enable distributed tracing mesh-wide at 100% sampling, sent to the Jaeger provider.
+apiVersion: telemetry.istio.io/v1
+kind: Telemetry
+metadata: { name: mesh-tracing, namespace: istio-system }
+spec:
+  tracing:
+  - providers: [{ name: jaeger }]
+    randomSamplingPercentage: 100

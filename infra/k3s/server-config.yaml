@@ -1,0 +1,7 @@
+# /etc/rancher/k3s/config.yaml on the SERVER node.
+# CRITICAL AWS FIX: force the apiserver to advertise the PRIVATE IP. With --node-external-ip set,
+# k3s advertised the public IP as the 'kubernetes' Service endpoint, so pods on agent nodes DNAT'd
+# 10.43.0.1:443 -> server PUBLIC IP, which is not reachable node-to-node inside the VPC (timeout).
+# Setting advertise-address to the private IP fixes cross-node ClusterIP + the API->kubelet log/exec proxy.
+node-ip: 172.31.9.150
+advertise-address: 172.31.9.150

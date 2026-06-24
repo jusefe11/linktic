@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: istio-ingress
+---
+# One wildcard cert from the local CA covers every *.local hostname (todo, argocd, grafana, ...).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: wildcard-local
+  namespace: istio-ingress
+spec:
+  secretName: wildcard-local-tls
+  dnsNames: ["*.local"]
+  issuerRef:
+    name: ca-issuer
+    kind: ClusterIssuer
+---
+# Main Gateway: HTTP:80 (for redirect) + HTTPS:443 (TLS terminated with the wildcard cert).
+# allowedRoutes from All so HTTPRoutes in todo/argocd/monitoring namespaces can attach.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: main-gateway
+  namespace: istio-ingress
+spec:
+  gatewayClassName: istio
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    hostname: "*.local"
+    allowedRoutes:
+      namespaces:
+        from: All
+  - name: https
+    port: 443
+    protocol: HTTPS
+    hostname: "*.local"
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - name: wildcard-local-tls
+    allowedRoutes:
+      namespaces:
+        from: All
+---
+# Catch-all HTTP->HTTPS 301 redirect (Gateway API does this via an HTTPRoute filter).
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: https-redirect
+  namespace: istio-ingress
+spec:
+  parentRefs:
+  - name: main-gateway
+    sectionName: http
+  hostnames: ["*.local"]
+  rules:
+  - filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        statusCode: 301

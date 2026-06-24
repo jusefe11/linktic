@@ -1,4 +1,0 @@
-resources:
-  - gateway-api/app.yaml
-  - cert-manager/app.yaml
-  - metallb/app.yaml

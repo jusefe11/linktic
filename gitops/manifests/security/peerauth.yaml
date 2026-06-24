@@ -1,0 +1,17 @@
+# Bonus: STRICT mTLS for all sidecar'd workloads in the todo namespace.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: { name: default, namespace: todo }
+spec:
+  mtls: { mode: STRICT }
+---
+# Exception: the frontend's :3000 is PERMISSIVE so the cloudflared tunnel (no sidecar, plaintext)
+# can still reach it, while gateway->frontend keeps using mTLS. Everything else stays STRICT.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: { name: todo-frontend, namespace: todo }
+spec:
+  selector: { matchLabels: { app: todo-frontend } }
+  mtls: { mode: STRICT }
+  portLevelMtls:
+    "3000": { mode: PERMISSIVE }

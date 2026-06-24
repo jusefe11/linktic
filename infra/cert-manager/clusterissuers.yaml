@@ -1,0 +1,35 @@
+# Two-step local CA chain:
+#  selfsigned-issuer -> issues a self-signed root CA cert (root-ca) -> ca-issuer signs all leaf certs.
+# Gateways reference cert Secrets produced by ca-issuer in their HTTPS listeners.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: root-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: k8s-lab-local-ca
+  secretName: root-ca-secret
+  duration: 87600h      # 10 years
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: ca-issuer
+spec:
+  ca:
+    secretName: root-ca-secret

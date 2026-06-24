@@ -1,0 +1,460 @@
+{
+  "meta": {
+    "project": "Cloud-Native Kubernetes Platform on AWS",
+    "source": "Prueba Tecnica - Ingeniero Cloud Senior v2.0 (May 2026)",
+    "aws": { "account": "399707825994", "region": "us-east-1", "profile": "juan-test" },
+    "golden_rule": "Never mark a task 'done' until ALL its verifications pass AND its STUDY_GUIDE.md section is written. Each verification is a hard gate before the next step.",
+    "documentation_policy": "Documentation is NOT written up front. The docs/STUDY_GUIDE.md section for a task is authored ONLY while/after executing that task, as a closing step. Every section MUST record the DECISION TAKEN AND WHY (chosen option, rejected alternatives, and reasoning) - this is explicitly required because the live review asks the candidate to justify every decision.",
+    "execution_order": ["P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10", "P11", "P12"],
+    "task_schema": {
+      "id": "stable task id",
+      "context": "why this task exists and how it fits the platform",
+      "steps": "ordered actions with commands",
+      "acceptance_criteria": "observable end-state that defines success",
+      "verifications": "exact command + expected output; gate before next step",
+      "documentation": "mandatory study-guide section to write; task is NOT done without it",
+      "definition_of_done": "verifications green AND stop_gate met AND documentation written"
+    },
+    "study_guide_file": "docs/STUDY_GUIDE.md"
+  },
+  "tasks": [
+    {
+      "id": "P0",
+      "phase": 0,
+      "title": "AWS Infrastructure Provisioning",
+      "block_ref": "Pre-requisite (not graded, enables everything)",
+      "weight_pct": 0,
+      "level": "Base",
+      "depends_on": [],
+      "billable": true,
+      "context": "The spec forbids kind/minikube/k3d. The cluster must run on real VMs. On AWS that means EC2. We provision 3 Ubuntu 24.04 instances (1 server + 2 agents) in the default VPC, each with an extra 80GB gp3 EBS for Longhorn, behind a locked-down security group. 3 nodes are required so Longhorn can replicate across workers and CNPG can place replicas with anti-affinity for the failover demo.",
+      "steps": [
+        { "id": "0.0", "action": "Confirm CLI identity and create infra/ + IDs file", "commands": ["aws sts get-caller-identity --profile juan-test --query Account --output text", "mkdir -p infra docs && echo AWS_REGION=us-east-1 > infra/aws-ids.env"] },
+        { "id": "0.1", "action": "Create SSH key pair, save PEM chmod 600", "commands": ["aws ec2 create-key-pair --profile juan-test --key-name juan-test-key --query KeyMaterial --output text > ~/.ssh/juan-test-key.pem", "chmod 600 ~/.ssh/juan-test-key.pem"] },
+        { "id": "0.2", "action": "Create security group; allow 22/80/443 from admin IP, all traffic intra-SG", "commands": ["aws ec2 create-security-group --profile juan-test --group-name k8s-lab-sg --description 'k8s lab' --vpc-id vpc-023b0ff014485f3c0 --tag-specifications 'ResourceType=security-group,Tags=[{Key=Project,Value=k8s-lab}]'", "authorize-security-group-ingress for tcp 22,80,443 from 181.53.99.60/32", "authorize-security-group-ingress --protocol -1 --source-group <SG_ID>"], "note": "Persist SG_ID to infra/aws-ids.env. Re-check admin IP (181.53.99.60) before running; it changes." },
+        { "id": "0.3", "action": "Launch 1x t3.large server + 2x t3.xlarge agents with 30GB root + 80GB data EBS", "commands": ["run-instances ... t3.large ... Name=k3s-server", "run-instances ... t3.xlarge --count 2 ... Name=k3s-agent"], "note": "BlockDeviceMappings: /dev/sda1=30GB, /dev/sdf=80GB (appears as nvme1n1 on Nitro)." },
+        { "id": "0.4", "action": "Record public/private IPs into infra/aws-ids.env (SERVER_*, AGENT1_*, AGENT2_*)", "commands": ["aws ec2 describe-instances --filters Name=tag:Project,Values=k8s-lab ..."] },
+        { "id": "0.5", "action": "Verify SSH reachability to all 3 nodes", "commands": ["ssh -i ~/.ssh/juan-test-key.pem ubuntu@<pub> hostname"] }
+      ],
+      "acceptance_criteria": [
+        "3 EC2 instances in state 'running' tagged Project=k8s-lab",
+        "Each instance has a 30GB root + 80GB data EBS volume",
+        "Security group restricts 22/80/443 to admin IP and allows all intra-SG traffic",
+        "SSH works to all 3 public IPs with the new key"
+      ],
+      "verifications": [
+        { "id": "v0.0", "command": "aws sts get-caller-identity --profile juan-test --query Account --output text", "expected": "399707825994" },
+        { "id": "v0.1", "command": "aws ec2 describe-key-pairs --profile juan-test --key-names juan-test-key --query 'KeyPairs[0].KeyName' --output text; test -f ~/.ssh/juan-test-key.pem && echo PEM_OK", "expected": "juan-test-key and PEM_OK" },
+        { "id": "v0.2", "command": "aws ec2 describe-security-groups --profile juan-test --group-ids $SG_ID --query 'SecurityGroups[0].IpPermissions[].FromPort' --output text", "expected": "shows 22, 80, 443 and an all(-1) rule" },
+        { "id": "v0.3", "command": "aws ec2 describe-instances --profile juan-test --filters Name=tag:Project,Values=k8s-lab Name=instance-state-name,Values=running --query 'length(Reservations[].Instances[])' --output text", "expected": "3" },
+        { "id": "v0.5", "command": "for ip in $SERVER_PUB $AGENT1_PUB $AGENT2_PUB; do ssh -i ~/.ssh/juan-test-key.pem -o StrictHostKeyChecking=accept-new ubuntu@$ip 'hostname'; done", "expected": "3 hostnames printed" }
+      ],
+      "stop_gate": "3 instances running with extra EBS, SG locked down, SSH to all 3 works.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P0 - AWS Infrastructure",
+        "study_topics": ["EC2 vs containers-as-nodes (why the spec bans kind/k3d)", "EBS gp3 volume types and Nitro device naming (sdf -> nvme1n1)", "VPC default networking, subnets, security groups, source/dest check", "Why 3 nodes (Longhorn replication, CNPG anti-affinity)"],
+        "attention_points": ["Admin IP in the SG changes; lock SSH to it", "Shell does not persist vars between calls; zsh does not word-split unquoted vars", "Stop instances when idle to control cost (~$0.42/hr running)"],
+        "what_if_removed": { "extra EBS": "Longhorn would have no replicated disk and CNPG PVCs could not bind", "intra-SG all-traffic rule": "k3s API/etcd/Calico VXLAN between nodes would be blocked and the cluster never forms" },
+        "review_questions": ["Why EC2 and not minikube/kind?", "What would happen if you used a single node?"]
+      },
+      "definition_of_done": "v0.0..v0.5 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P0' section written."
+    },
+    {
+      "id": "P1",
+      "phase": 1,
+      "title": "Block 1 - k3s Cluster Bootstrap",
+      "block_ref": "Bloque 1",
+      "weight_pct": 12,
+      "level": "Senior",
+      "depends_on": ["P0"],
+      "billable": false,
+      "context": "Bring up a production-faithful k3s cluster: embedded etcd (not SQLite), Calico CNI (Istio-compatible, full NetworkPolicy), flannel and traefik disabled because we replace them with Calico and the Istio Gateway API. ServiceLB (klipper) is kept ON: it publishes LoadBalancer services on the real node IP, which is the justified AWS alternative to MetalLB (AWS VPC is SDN, MetalLB L2 ARP VIPs do not route).",
+      "steps": [
+        { "id": "1.1", "action": "OS prep on all 3 nodes: open-iscsi, iscsi_tcp module, ip_forward", "commands": ["sudo apt-get install -y open-iscsi nfs-common", "sudo systemctl enable --now iscsid", "sudo modprobe iscsi_tcp", "sysctl net.ipv4.ip_forward=1"] },
+        { "id": "1.2", "action": "Install k3s server (flannel off, traefik off, cluster-init for etcd, node-external-ip)", "commands": ["curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC='server --cluster-init --flannel-backend=none --disable-network-policy --disable=traefik --node-external-ip=$SERVER_PUB --tls-san=$SERVER_PUB' sh -"], "note": "Node will be NotReady until Calico is installed - this is EXPECTED." },
+        { "id": "1.3", "action": "Join 2 agents using node-token and server private IP", "commands": ["cat /var/lib/rancher/k3s/server/node-token", "curl -sfL https://get.k3s.io | K3S_URL=https://$SERVER_PRIV:6443 K3S_TOKEN=<t> INSTALL_K3S_EXEC='agent --node-external-ip=<AGENT_PUB>' sh -"] },
+        { "id": "1.4", "action": "Install Calico (tigera-operator) with pod CIDR 10.42.0.0/16 and VXLAN encapsulation", "commands": ["kubectl create -f tigera-operator.yaml", "apply Installation CR cidr=10.42.0.0/16 encapsulation=VXLAN"], "note": "VXLAN (not BGP/IPIP) because AWS blocks BGP." },
+        { "id": "1.5", "action": "Fetch kubeconfig locally, rewrite server URL to public IP", "commands": ["scp ...:/etc/rancher/k3s/k3s.yaml infra/kubeconfig", "sed -i '' s/127.0.0.1/$SERVER_PUB/ infra/kubeconfig"] },
+        { "id": "1.6", "action": "LoadBalancer smoke test with whoami", "commands": ["kubectl create deploy whoami --image=traefik/whoami; kubectl expose deploy whoami --port=80 --type=LoadBalancer"] }
+      ],
+      "acceptance_criteria": [
+        "3 nodes in Ready state from a local kubectl",
+        "Calico pods Running, no CNI errors",
+        "A LoadBalancer service receives an EXTERNAL-IP (node IP) and answers HTTP",
+        "etcd is the datastore (not SQLite)"
+      ],
+      "verifications": [
+        { "id": "v1.1", "command": "ssh <node> 'systemctl is-active iscsid; sysctl -n net.ipv4.ip_forward; lsblk | grep -c nvme1n1'", "expected": "active / 1 / 1 on each node" },
+        { "id": "v1.2", "command": "ssh server 'sudo systemctl is-active k3s'", "expected": "active" },
+        { "id": "v1.4", "command": "kubectl wait --for=condition=Ready node --all --timeout=180s; kubectl get pods -n calico-system", "expected": "all nodes Ready; calico pods Running" },
+        { "id": "v1.5", "command": "kubectl get nodes -o wide", "expected": "3x Ready from local machine" },
+        { "id": "v1.6", "command": "kubectl get svc whoami -o jsonpath='{.status.loadBalancer.ingress[0].ip}'; curl -s http://$SERVER_PUB/ | head -1", "expected": "node IP assigned; HTTP response from whoami" }
+      ],
+      "stop_gate": "3x Ready + Calico Running + LoadBalancer answers. README documents k3s-vs-kubeadm and ServiceLB-vs-MetalLB.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P1 - k3s Bootstrap",
+        "study_topics": ["k3s vs kubeadm: architecture, components, tradeoffs", "Embedded etcd vs SQLite datastore in k3s", "CNI role; why Calico over Flannel (NetworkPolicy, Istio compat)", "Calico VXLAN vs BGP/IPIP and why AWS forces VXLAN", "MetalLB L2 (ARP) vs k3s ServiceLB/klipper; why MetalLB L2 fails on AWS SDN", "Pod CIDR vs Service CIDR; node-external-ip purpose"],
+        "attention_points": ["Node is NotReady until CNI is installed - know why and say it confidently", "ServiceLB binds node ports - explain how the Gateway gets an external IP", "We intentionally SKIP MetalLB - have the AWS SDN justification ready"],
+        "what_if_removed": { "Calico": "no pod networking; nodes stay NotReady, no pod-to-pod traffic, no NetworkPolicy", "ServiceLB": "LoadBalancer services stay <pending>; Istio Gateway gets no external IP", "embedded etcd": "single-point datastore, no HA control plane semantics" },
+        "review_questions": ["Why k3s over kubeadm for this deployment?", "What happens if you delete the CNI?", "Why does MetalLB L2 not work on AWS and what did you use instead?"]
+      },
+      "definition_of_done": "v1.1..v1.6 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P1' section written."
+    },
+    {
+      "id": "P2",
+      "phase": 2,
+      "title": "Block 2 - cert-manager + local CA",
+      "block_ref": "Bloque 2",
+      "weight_pct": 8,
+      "level": "Base",
+      "depends_on": ["P1"],
+      "billable": false,
+      "context": "cert-manager manages all cluster TLS. A self-signed root CA is created via two chained ClusterIssuers: a 'selfsigned' issuer bootstraps a root CA certificate, and a 'CA' issuer signs the real leaf certs from that root. Gateways reference these cert Secrets in their HTTPS listeners. The root CA must be importable into the OS/browser trust store so reviewers get no TLS warnings.",
+      "steps": [
+        { "id": "2.1", "action": "Install cert-manager via Helm with CRDs", "commands": ["helm install cert-manager jetstack/cert-manager -n cert-manager --create-namespace --set crds.enabled=true"] },
+        { "id": "2.2", "action": "Create selfsigned-issuer -> root-ca Certificate (isCA) -> ca-issuer", "commands": ["apply ClusterIssuer selfsigned-issuer", "apply Certificate root-ca (isCA:true) in cert-manager ns", "apply ClusterIssuer ca-issuer referencing root-ca-secret"] },
+        { "id": "2.3", "action": "Issue a test cert from ca-issuer; export ca.crt", "commands": ["apply test Certificate", "kubectl get secret root-ca-secret -o jsonpath ... > ca.crt"] }
+      ],
+      "acceptance_criteria": ["Both ClusterIssuers Ready=True", "root CA Secret exists (tls.crt/tls.key/ca.crt)", "A leaf cert signed by the local CA issues successfully", "ca.crt exported and import procedure documented"],
+      "verifications": [
+        { "id": "v2.1", "command": "kubectl wait --for=condition=Available deploy -n cert-manager --all --timeout=120s", "expected": "all Available" },
+        { "id": "v2.2", "command": "kubectl get clusterissuer", "expected": "selfsigned-issuer Ready=True, ca-issuer Ready=True" },
+        { "id": "v2.3", "command": "kubectl get certificate <test>; openssl x509 -in ca.crt -noout -subject", "expected": "test cert Ready=True; subject shows local CA" }
+      ],
+      "stop_gate": "Both issuers Ready, root CA Secret present, test leaf cert issued, ca.crt exported.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P2 - cert-manager",
+        "study_topics": ["cert-manager objects: Issuer/ClusterIssuer, Certificate, CertificateRequest, Secret", "selfsigned vs CA issuer; why the two-step chain", "X.509 chain of trust; isCA, root vs leaf", "How a Gateway HTTPS listener consumes a cert Secret"],
+        "attention_points": ["ClusterIssuer (cluster-wide) vs Issuer (namespaced)", "Importing the root CA into OS/browser trust to avoid warnings", "Secret must live where the Gateway can read it (or use ReferenceGrant)"],
+        "what_if_removed": { "cert-manager": "no automated TLS; Gateways have no valid certs; HTTPS endpoints break/warn", "ca-issuer": "no way to sign leaf certs from the local root" },
+        "review_questions": ["Why two ClusterIssuers instead of one?", "TLS termination at Gateway vs HTTPRoute - tradeoffs?"]
+      },
+      "definition_of_done": "v2.1..v2.3 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P2' section written."
+    },
+    {
+      "id": "P3",
+      "phase": 3,
+      "title": "Block 3 - Gateway API v1.4 + Istio",
+      "block_ref": "Bloque 3",
+      "weight_pct": 12,
+      "level": "Senior",
+      "depends_on": ["P2"],
+      "billable": false,
+      "context": "Replace Ingress with Gateway API v1.4 (Standard Channel). Install the CRDs first, then Istio (demo profile) which registers the GatewayClass 'istio' and provisions an ingress gateway Deployment+Service. A main Gateway exposes the ToDo app (HTTP:80 redirect -> HTTPS:443 with a local-CA cert). Platform listeners expose argocd/grafana/kiali/jaeger/longhorn .local. HTTPRoutes live in each app namespace and reference the Gateway via parentRefs; ReferenceGrant authorizes cross-namespace references.",
+      "steps": [
+        { "id": "3.1", "action": "Install Gateway API Standard Channel CRDs v1.4.0", "commands": ["kubectl apply -f gateway-api/releases/download/v1.4.0/standard-install.yaml"] },
+        { "id": "3.2", "action": "Install Istio demo profile (brings Jaeger/Kiali/Prometheus/Grafana addons)", "commands": ["istioctl install --set profile=demo -y"] },
+        { "id": "3.3", "action": "Create main Gateway: :80 HTTP->HTTPS redirect, :443 HTTPS with CA cert", "commands": ["apply Certificate todo.local (ca-issuer)", "apply Gateway gatewayClassName=istio listeners 80+443"] },
+        { "id": "3.4", "action": "Add platform listeners/certs for argocd/grafana/kiali/jaeger/longhorn .local", "commands": ["apply per-host Certificates + listeners"] },
+        { "id": "3.5", "action": "Add ReferenceGrants for cross-namespace cert/route refs", "commands": ["apply ReferenceGrant where needed"] }
+      ],
+      "acceptance_criteria": ["GatewayClass istio Accepted=True", "Gateways Programmed=True", "istio-ingressgateway has an EXTERNAL-IP (node IP)", "HTTP redirects to HTTPS; HTTPS served with local-CA cert (no warning after CA import)"],
+      "verifications": [
+        { "id": "v3.1", "command": "kubectl get crd gateways.gateway.networking.k8s.io -o jsonpath='{.spec.versions[?(@.storage)].name}'; kubectl get crd | grep -c gateway.networking.k8s.io", "expected": "v1 ; >=5 CRDs" },
+        { "id": "v3.2", "command": "kubectl get gatewayclass istio -o jsonpath='{.status.conditions[?(@.type==\"Accepted\")].status}'", "expected": "True" },
+        { "id": "v3.3", "command": "kubectl get gateway <name> -o jsonpath='{.status.conditions[?(@.type==\"Programmed\")].status}'; kubectl get svc -n istio-system istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'", "expected": "True ; node IP" }
+      ],
+      "stop_gate": "GatewayClass Accepted, Gateways Programmed, ingress has external IP, HTTP->HTTPS works with CA cert.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P3 - Gateway API + Istio",
+        "study_topics": ["Gateway API role model: GatewayClass/Gateway/HTTPRoute/ReferenceGrant", "Gateway API vs classic Ingress (why it replaces Ingress)", "Standard vs Experimental channel; v1 resources", "Istio as GatewayClass controller; ingress gateway provisioning", "TLS termination at Gateway vs passthrough vs HTTPRoute", "parentRefs and cross-namespace ReferenceGrant"],
+        "attention_points": ["Install CRDs BEFORE Istio", "Use Standard channel, not Experimental", "Explain TLS-at-Gateway choice vs HTTPRoute", "Each HTTPRoute lives in the app namespace and references the shared Gateway"],
+        "what_if_removed": { "Gateway API CRDs": "Istio cannot create Gateways; no north-south routing", "main Gateway": "no entry point; app and UIs unreachable", "ReferenceGrant": "cross-namespace cert/route refs are denied" },
+        "review_questions": ["Why Gateway API over Ingress?", "Difference between TLS termination at Gateway vs HTTPRoute?", "What does ReferenceGrant authorize?"]
+      },
+      "definition_of_done": "v3.1..v3.3 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P3' section written."
+    },
+    {
+      "id": "P4",
+      "phase": 4,
+      "title": "Block 4 - GitOps with ArgoCD (App of Apps + Sync Waves)",
+      "block_ref": "Bloque 4",
+      "weight_pct": 13,
+      "level": "Senior",
+      "depends_on": ["P3"],
+      "billable": false,
+      "context": "The Git repo is the single source of truth using the App-of-Apps pattern: a root Application manages child Applications (apps/, infra/, observability/). Sync Waves enforce ordering: CRDs+cert-manager first, then Istio, then storage, then DB, then app. Everything bootstrapped imperatively in P2-P3 is migrated into Git and reconciled by ArgoCD.",
+      "steps": [
+        { "id": "4.1", "action": "Create private repo with apps/ infra/ observability/ bootstrap/ layout", "commands": ["git init; push to private GitHub/GitLab; grant evaluator access"] },
+        { "id": "4.2", "action": "Install ArgoCD in argocd ns; expose via HTTPRoute argocd.local", "commands": ["helm/manifest install; apply HTTPRoute"] },
+        { "id": "4.3", "action": "Root Application + child Apps with Sync Waves 0..5", "commands": ["apply root Application; annotate children argocd.argoproj.io/sync-wave"] },
+        { "id": "4.4", "action": "Migrate P2-P3 manifests into Git; demonstrate GitOps loop (change replicas)", "commands": ["edit replicas in Git; argocd auto-sync"] }
+      ],
+      "acceptance_criteria": ["All Applications Synced + Healthy", "ArgoCD UI reachable at argocd.local over HTTPS (no port-forward)", "Sync Waves order respected", "A Git change auto-applies to the cluster"],
+      "verifications": [
+        { "id": "v4.2", "command": "kubectl get pods -n argocd; curl -k https://argocd.local | head -1", "expected": "argocd pods Healthy; UI responds" },
+        { "id": "v4.3", "command": "argocd app list -o name | wc -l ; argocd app list", "expected": "all apps Synced+Healthy" },
+        { "id": "v4.4", "command": "edit replicas in git, wait sync, kubectl get deploy <x> -o jsonpath='{.spec.replicas}'", "expected": "matches the new git value with no manual apply" }
+      ],
+      "stop_gate": "All Applications Synced+Healthy, GitOps loop demonstrated, no imperative leftovers.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P4 - GitOps with ArgoCD",
+        "study_topics": ["GitOps principles; declarative vs imperative", "ArgoCD: Application, Project, sync policies, self-heal, prune", "App-of-Apps pattern", "Sync Waves and hooks for ordering", "Drift detection and auto-sync"],
+        "attention_points": ["HTTPRoutes/Gateways must be Git-managed, not manual", "Sync Wave order: CRDs+cert-manager -> Istio -> Longhorn -> CNPG -> observability -> app", "Be ready to show a live drift->reconcile"],
+        "what_if_removed": { "ArgoCD": "no continuous reconciliation; manual drift; loses single-source-of-truth", "Sync Waves": "race conditions: app deploys before CRDs/DB exist and fails" },
+        "review_questions": ["Explain App-of-Apps.", "How do Sync Waves guarantee order?", "What happens if someone kubectl-edits a resource ArgoCD manages?"]
+      },
+      "definition_of_done": "v4.2..v4.4 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P4' section written."
+    },
+    {
+      "id": "P5",
+      "phase": 5,
+      "title": "Block 5 - Local Container Registry (ECR simulated)",
+      "block_ref": "Bloque 5",
+      "weight_pct": 7,
+      "level": "Base",
+      "depends_on": ["P1"],
+      "billable": false,
+      "context": "Deploy an in-cluster registry (Docker Registry v2 or Zot) that simulates a private ECR. Images are built locally, pushed to the cluster registry, and referenced by Deployments. The registry must be reachable from the nodes for image pulls.",
+      "steps": [
+        { "id": "5.1", "action": "Deploy registry (Deployment+Service, persistent volume)", "commands": ["apply registry manifests / helm"] },
+        { "id": "5.2", "action": "Build, push, and pull-test an image", "commands": ["docker build; docker push <registry>/img; kubectl run test --image=<registry>/img"] }
+      ],
+      "acceptance_criteria": ["Registry pod Running and reachable from nodes", "An image pushed to it can be pulled by a pod"],
+      "verifications": [
+        { "id": "v5.1", "command": "kubectl get pods -l app=registry; curl -s http://<registry>/v2/_catalog", "expected": "Running; JSON catalog 200" },
+        { "id": "v5.2", "command": "kubectl run test --image=<registry>/<img> --restart=Never; kubectl get pod test", "expected": "pulls and runs (no ImagePullBackOff)" }
+      ],
+      "stop_gate": "Image pushed to cluster registry and pulled by a pod.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P5 - Local Registry",
+        "study_topics": ["OCI Distribution Spec; registry v2 API", "Docker Registry v2 vs Zot vs Harbor", "imagePullSecrets and insecure registries", "Real ECR auth token 12h expiry problem"],
+        "attention_points": ["Justify registry choice in README", "Node trust for insecure/HTTP registry (k3s registries.yaml)"],
+        "what_if_removed": { "registry": "Deployments cannot pull app images; pods stuck ImagePullBackOff" },
+        "review_questions": ["Why this registry?", "How would you solve ECR's 12h token expiry?"]
+      },
+      "definition_of_done": "v5.1..v5.2 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P5' section written."
+    },
+    {
+      "id": "P6",
+      "phase": 6,
+      "title": "Block 6 - ToDo App (2 microservices)",
+      "block_ref": "Bloque 6",
+      "weight_pct": 13,
+      "level": "Senior",
+      "depends_on": ["P3", "P5", "P7"],
+      "billable": false,
+      "context": "todo-api (Go1.22/Node20, :8080) is a REST CRUD service on PostgreSQL exposing /healthz, /readyz, /metrics; it must propagate Istio tracing headers (x-request-id, x-b3-*) on outbound calls so Jaeger shows full traces. todo-frontend (React18+Nginx, :3000) calls the API through the Gateway. Both run in ns todo with Istio sidecars. Full set of K8s hygiene resources is required.",
+      "steps": [
+        { "id": "6.1", "action": "Implement todo-api: CRUD + health/ready/metrics + tracing header propagation", "commands": ["code + Dockerfile"] },
+        { "id": "6.2", "action": "Implement todo-frontend SPA calling API via Gateway", "commands": ["code + Dockerfile + nginx conf"] },
+        { "id": "6.3", "action": "K8s resources: Deployment(2,RollingUpdate), HTTPRoute, HPA(60%,2,5), probes, requests/limits, NetworkPolicy, ConfigMap+Secret, ServiceAccount per svc", "commands": ["apply manifests via ArgoCD"] },
+        { "id": "6.4", "action": "Build + push images to local registry", "commands": ["docker build/push"] }
+      ],
+      "acceptance_criteria": ["Both services 2/2 Ready (app+sidecar)", "All required K8s resources present", "Rolling update has zero downtime", "Create/list/edit/delete task works end to end and persists in PostgreSQL", "NetworkPolicy restricts frontend->api and api->PG only"],
+      "verifications": [
+        { "id": "v6.1", "command": "curl /readyz (DB down vs up); curl /metrics", "expected": "/readyz 200 only when DB reachable; /metrics returns Prometheus text" },
+        { "id": "v6.3", "command": "kubectl get deploy,hpa,networkpolicy,sa,cm,secret -n todo; kubectl get pods -n todo", "expected": "all present; pods 2/2 Ready" },
+        { "id": "v6.4", "command": "kubectl rollout restart deploy/todo-api -n todo while curling endpoint", "expected": "no 5xx during rollout" },
+        { "id": "v6.5", "command": "create task in frontend; kubectl exec psql 'select * from tasks'", "expected": "row present" }
+      ],
+      "stop_gate": "End-to-end CRUD works, all pods 2/2, zero-downtime rollout, NetworkPolicy enforced.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P6 - ToDo App",
+        "study_topics": ["Liveness vs readiness probes semantics", "HPA: metrics, target utilization, min/max, scaling behavior", "RollingUpdate strategy, maxSurge/maxUnavailable", "NetworkPolicy with Calico (default-deny + allow rules)", "ConfigMap vs Secret; env injection", "Istio sidecar injection; B3 trace header propagation", "ServiceAccount and least privilege RBAC"],
+        "attention_points": ["readyz must actually check DB connectivity", "Without header propagation Jaeger traces fragment", "2/2 means app + Envoy sidecar"],
+        "what_if_removed": { "readiness probe": "traffic routed to not-ready pods -> errors during rollout", "NetworkPolicy": "any pod can reach PG; no segmentation", "tracing header propagation": "Jaeger shows disconnected spans" },
+        "review_questions": ["Liveness vs readiness?", "Why propagate b3 headers?", "What does the NetworkPolicy block?"]
+      },
+      "definition_of_done": "v6.1..v6.5 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P6' section written."
+    },
+    {
+      "id": "P7",
+      "phase": 7,
+      "title": "Block 7 - PostgreSQL with CloudNativePG",
+      "block_ref": "Bloque 7",
+      "weight_pct": 10,
+      "level": "Senior",
+      "depends_on": ["P8"],
+      "billable": false,
+      "context": "CloudNativePG operator manages a 3-instance Postgres cluster (1 primary + 2 read replicas) with automatic failover. DB tododb, owner creds in a Secret, storage on Longhorn (>=5Gi/instance), built-in PodMonitor for Prometheus. todo-api connects to the operator-generated RW Service using the CNPG Secret.",
+      "steps": [
+        { "id": "7.1", "action": "Install CNPG operator in cnpg-system", "commands": ["apply operator / helm"] },
+        { "id": "7.2", "action": "Define Cluster: 3 instances, tododb, Longhorn storage 5Gi, PodMonitor", "commands": ["apply Cluster CR"] },
+        { "id": "7.3", "action": "Wire todo-api to CNPG RW Service via CNPG Secret env", "commands": ["reference -rw service + secret in Deployment"] },
+        { "id": "7.4", "action": "Failover demo: delete primary pod", "commands": ["kubectl delete pod <primary>"] }
+      ],
+      "acceptance_criteria": ["Cluster Healthy with 3 instances", "Failover < 30s with no manual action", "Data persists across todo-api pod restarts", "PG metrics scraped by Prometheus / visible in Grafana"],
+      "verifications": [
+        { "id": "v7.2", "command": "kubectl get cluster -n <ns>; kubectl get pods -n <ns>", "expected": "healthy state; 3 pods Running" },
+        { "id": "v7.4", "command": "note current primary; kubectl delete pod <primary>; watch kubectl get cluster", "expected": "new primary promoted in <30s" },
+        { "id": "v7.5", "command": "create tasks; kubectl delete pod -l app=todo-api; re-list tasks", "expected": "tasks still present" }
+      ],
+      "stop_gate": "3 instances Healthy, failover <30s, persistence proven, metrics flowing.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P7 - CloudNativePG",
+        "study_topics": ["Operator pattern and CRDs", "Postgres streaming replication, primary/replica roles", "CNPG failover/switchover; RW/RO/R services", "PodMonitor vs ServiceMonitor", "How storageClass binds to Longhorn PVCs"],
+        "attention_points": ["App must use the -rw service, not a pod IP", "Creds come from the CNPG-generated Secret", "Failover must beat 30s - know the mechanism"],
+        "what_if_removed": { "CNPG operator": "no managed failover/backups; manual Postgres ops", "RW service": "app cannot find the current primary after failover" },
+        "review_questions": ["How does CNPG do failover?", "Difference between rw/ro/r services?", "What happens to writes during failover?"]
+      },
+      "definition_of_done": "v7.2..v7.5 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P7' section written."
+    },
+    {
+      "id": "P8",
+      "phase": 8,
+      "title": "Block 8 - Persistent Storage (Longhorn)",
+      "block_ref": "Bloque 8",
+      "weight_pct": 8,
+      "level": "Base+",
+      "depends_on": ["P1"],
+      "billable": false,
+      "context": "Longhorn provides distributed, replicated block storage so PostgreSQL data survives pod/node/cluster restarts. Requires open-iscsi (installed in P1.1) and uses the extra 80GB EBS on each node. Default 2 replicas per volume; UI exposed via HTTPRoute longhorn.local.",
+      "steps": [
+        { "id": "8.1", "action": "Prepare extra EBS as Longhorn disk on each node", "commands": ["mkfs/mount /dev/nvme1n1 or set as Longhorn disk path"] },
+        { "id": "8.2", "action": "Install Longhorn (Helm), defaultReplicaCount=2, UI HTTPRoute", "commands": ["helm install longhorn; apply HTTPRoute"] },
+        { "id": "8.3", "action": "Verify CNPG PVCs Bound and volumes replicated/Healthy", "commands": ["kubectl get pvc; Longhorn UI"] }
+      ],
+      "acceptance_criteria": ["Longhorn installed before CNPG", "CNPG PVCs Bound", "Volumes Healthy + replicated (>=2) in Longhorn UI", "Data survives delete+recreate of Postgres pods"],
+      "verifications": [
+        { "id": "v8.1", "command": "ssh <node> 'lsblk | grep nvme1n1'", "expected": "extra disk present on all nodes" },
+        { "id": "v8.2", "command": "kubectl get pods -n longhorn-system; curl -k https://longhorn.local | head -1", "expected": "managers Running; UI loads" },
+        { "id": "v8.3", "command": "kubectl get pvc -A | grep cnpg; check Longhorn UI volume health", "expected": "PVCs Bound; volumes Healthy/replicated" }
+      ],
+      "stop_gate": "PVCs Bound, volumes Healthy/replicated, persistence proven.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P8 - Longhorn",
+        "study_topics": ["CSI and dynamic provisioning", "Longhorn architecture: manager, engine, replicas", "open-iscsi requirement and why", "StorageClass, PV, PVC binding lifecycle", "Replica count and node failure tolerance"],
+        "attention_points": ["Install Longhorn BEFORE CNPG (dependency)", "2 replicas needs 2 schedulable workers", "open-iscsi must be active on every node"],
+        "what_if_removed": { "Longhorn": "no replicated storage; CNPG PVCs cannot bind; data not durable", "open-iscsi": "Longhorn volumes fail to attach" },
+        "review_questions": ["How does Longhorn replicate?", "What happens if a node holding a replica dies?", "Why open-iscsi?"]
+      },
+      "definition_of_done": "v8.1..v8.3 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P8' section written."
+    },
+    {
+      "id": "P9",
+      "phase": 9,
+      "title": "Block 9 - Observability (Istio + Prometheus/Grafana/Jaeger/Kiali/Loki)",
+      "block_ref": "Bloque 9",
+      "weight_pct": 12,
+      "level": "Senior",
+      "depends_on": ["P6"],
+      "billable": false,
+      "context": "Istio sidecars capture L7 metrics and distributed traces for ns todo. kube-prometheus-stack scrapes cluster/app/CNPG metrics; Grafana visualizes; Jaeger shows trace chains Gateway->todo-api->PostgreSQL; Kiali shows the live mesh graph; Loki centralizes logs. All UIs exposed via HTTPRoutes (no port-forward at review).",
+      "steps": [
+        { "id": "9.1", "action": "Enable sidecar injection in todo, restart pods", "commands": ["kubectl label ns todo istio-injection=enabled; rollout restart"] },
+        { "id": "9.2", "action": "Install kube-prometheus-stack + Loki/Promtail; Grafana HTTPRoute", "commands": ["helm install both; apply HTTPRoute grafana.local"] },
+        { "id": "9.3", "action": "Expose Jaeger/Kiali via HTTPRoutes", "commands": ["apply HTTPRoutes jaeger.local, kiali.local"] },
+        { "id": "9.4", "action": "Import dashboards 7639 (Istio), 315 (K8s), CNPG", "commands": ["import via Grafana"] },
+        { "id": "9.5", "action": "Add >=1 VirtualService (timeout/retry on todo-api)", "commands": ["apply VirtualService"] }
+      ],
+      "acceptance_criteria": ["All todo pods 2/2", "Grafana/Jaeger/Kiali reachable via HTTPS HTTPRoutes", "Jaeger shows full span chain per endpoint", "Kiali shows live traffic + p50/p95", "Dashboards show real data"],
+      "verifications": [
+        { "id": "v9.1", "command": "kubectl get pods -n todo", "expected": "all 2/2 Ready" },
+        { "id": "v9.2", "command": "curl -k https://grafana.local | head -1; Prometheus targets Up", "expected": "Grafana loads; targets Up" },
+        { "id": "v9.6", "command": "generate traffic; open Jaeger; inspect a GET /tasks trace", "expected": "spans Gateway->todo-api->PostgreSQL correlated" }
+      ],
+      "stop_gate": "Traces correlated, Kiali graph live, Grafana dashboards with real data, all UIs via HTTPRoute.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P9 - Observability",
+        "study_topics": ["Three pillars: metrics, logs, traces", "Istio telemetry; Envoy sidecar; mTLS", "Prometheus scraping, ServiceMonitor/PodMonitor", "Distributed tracing, B3 propagation, spans", "Kiali graph and VirtualService (timeout/retry)", "Loki/Promtail and LogQL basics"],
+        "attention_points": ["Header propagation from P6 is what makes traces whole", "All UIs via HTTPRoute, NOT port-forward at review", "Be able to read a Jaeger trace live"],
+        "what_if_removed": { "Istio sidecar": "no L7 metrics/traces/mTLS for the app", "Prometheus": "no metrics; Grafana empty", "VirtualService": "no app-level timeout/retry policy" },
+        "review_questions": ["Walk a request through Jaeger.", "What does the VirtualService do and why?", "How does Prometheus discover targets?"]
+      },
+      "definition_of_done": "v9.1..v9.6 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P9' section written."
+    },
+    {
+      "id": "P10",
+      "phase": 10,
+      "title": "Block 10 - Public Exposure (Ngrok)",
+      "block_ref": "Bloque 10",
+      "weight_pct": 5,
+      "level": "Base",
+      "depends_on": ["P6"],
+      "billable": false,
+      "context": "Expose the ToDo frontend publicly via the Ngrok Kubernetes Operator (manages tunnels as native K8s resources, integrates with GitOps, no host process). A shared public URL lets reviewers create a task remotely that persists in PostgreSQL.",
+      "steps": [
+        { "id": "10.1", "action": "Install Ngrok K8s Operator (GitOps), tunnel to todo-frontend", "commands": ["helm install ngrok-operator; apply tunnel CR / Gateway"] },
+        { "id": "10.2", "action": "Verify public URL and end-to-end write", "commands": ["open URL; create task; check PG"] }
+      ],
+      "acceptance_criteria": ["Operator pods Running", "A public URL is issued and serves the frontend", "Task created from the public URL persists in PostgreSQL"],
+      "verifications": [
+        { "id": "v10.1", "command": "kubectl get pods -n ngrok-operator; get the issued public URL", "expected": "Running; URL present" },
+        { "id": "v10.2", "command": "open public URL, create task, kubectl exec psql select", "expected": "frontend loads; row persisted" }
+      ],
+      "stop_gate": "App reachable from public URL; remote write persists.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P10 - Ngrok",
+        "study_topics": ["Reverse tunnels and how Ngrok exposes private services", "Ngrok Operator CRDs vs binary vs Cloudflare Tunnel", "Free-tier limits (1 tunnel, URL rotates)"],
+        "attention_points": ["Document URL-changes-per-session behavior", "Operator integrates with GitOps (no host process)"],
+        "what_if_removed": { "Ngrok": "app only reachable inside the VPC; no public demo URL" },
+        "review_questions": ["How does Ngrok expose a private service without firewall changes?", "Operator vs binary tradeoffs?"]
+      },
+      "definition_of_done": "v10.1..v10.2 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P10' section written."
+    },
+    {
+      "id": "P11",
+      "phase": 11,
+      "title": "Deliverables & Live-Review Prep",
+      "block_ref": "Entregables y evaluacion",
+      "weight_pct": 0,
+      "level": "Base",
+      "depends_on": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"],
+      "billable": false,
+      "context": "Package the deliverables: README (prereqs, from-zero steps, per-block design decisions, /etc/hosts list, k3s-vs-kubeadm justification), bootstrap.sh/Makefile with per-block targets, clean commit history, evaluator repo access. Dry-run the 11-point live review checklist.",
+      "steps": [
+        { "id": "11.1", "action": "Write README with all required sections", "commands": ["author README.md"] },
+        { "id": "11.2", "action": "Create Makefile/bootstrap.sh targets: cluster infra gateway argocd observability expose", "commands": ["author Makefile"] },
+        { "id": "11.3", "action": "Clean commit history; grant evaluator access", "commands": ["git history review"] },
+        { "id": "11.4", "action": "Dry-run the 11-point review checklist", "commands": ["walk each demonstration"] }
+      ],
+      "acceptance_criteria": ["README lets a fresh reader reproduce from zero", "Make targets run idempotently", "All 11 review demonstrations pass", "Repo access granted to evaluator"],
+      "verifications": [
+        { "id": "v11.2", "command": "make cluster infra gateway argocd observability expose (on a clean attempt or dry-run)", "expected": "each target completes idempotently" },
+        { "id": "v11.4", "command": "walk the 11 checklist items end to end", "expected": "all 11 green" }
+      ],
+      "stop_gate": "README complete, Make targets work, all 11 review items pass, evaluator has access.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P11 - Review Prep",
+        "study_topics": ["The 11-point live review checklist and its evidence", "For each component: purpose + what-if-removed (review explicitly asks this)", "Overall architecture narrative end to end"],
+        "attention_points": ["Documentation consultation during review is allowed and expected", "Be able to explain every design decision", "Practice the failover and GitOps-loop demos live"],
+        "what_if_removed": { "README": "evaluator cannot reproduce; loses reproducibility points" },
+        "review_questions": ["Give the end-to-end request path.", "Why each tool over its alternatives?"]
+      },
+      "definition_of_done": "v11.2,v11.4 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P11' section written."
+    },
+    {
+      "id": "P12",
+      "phase": 12,
+      "title": "Bonus - mTLS strict + HPA load test (+10)",
+      "block_ref": "Puntos bonus",
+      "weight_pct": 0,
+      "level": "Bonus",
+      "depends_on": ["P6", "P9"],
+      "billable": false,
+      "context": "Selected high-value/low-effort bonus: (1) PeerAuthentication STRICT in ns todo to force mTLS for all internal traffic; (2) generate load on todo-api with k6/hey and prove the HPA scales pods up under demand and back down.",
+      "steps": [
+        { "id": "12.1", "action": "Apply PeerAuthentication STRICT in todo", "commands": ["apply PeerAuthentication mode=STRICT"] },
+        { "id": "12.2", "action": "Run k6/hey load against todo-api; watch HPA", "commands": ["k6 run load.js; watch kubectl get hpa"] }
+      ],
+      "acceptance_criteria": ["mTLS STRICT enforced (plaintext blocked)", "HPA scales replicas up under load, then back down"],
+      "verifications": [
+        { "id": "v12.1", "command": "istioctl authn tls-check; attempt plaintext call to a todo pod", "expected": "STRICT shown; plaintext rejected" },
+        { "id": "v12.2", "command": "run load; watch kubectl get hpa -n todo -w", "expected": "replicas scale toward max, then back to min after load stops" }
+      ],
+      "stop_gate": "mTLS STRICT verified and HPA autoscaling demonstrated.",
+      "documentation": {
+        "target_file": "docs/STUDY_GUIDE.md",
+        "section": "P12 - Bonus",
+        "study_topics": ["Istio PeerAuthentication PERMISSIVE vs STRICT", "mTLS handshake in the mesh", "HPA scaling algorithm and stabilization windows", "Load testing with k6/hey"],
+        "attention_points": ["STRICT can break clients without sidecars - know the blast radius", "HPA needs metrics-server / Prometheus adapter"],
+        "what_if_removed": { "PeerAuthentication STRICT": "internal traffic may fall back to plaintext" },
+        "review_questions": ["PERMISSIVE vs STRICT mTLS?", "How does the HPA decide to scale?"]
+      },
+      "definition_of_done": "v12.1,v12.2 green AND stop_gate met AND docs/STUDY_GUIDE.md 'P12' section written."
+    }
+  ]
+}

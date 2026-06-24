@@ -1,4 +1,0 @@
-resources:
-  - istio-base/app.yaml
-  - istiod/app.yaml
-  - gateways/app.yaml

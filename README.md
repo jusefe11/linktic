@@ -1,223 +1,126 @@
-# Prueba técnica Cloud Native
+# Cloud-Native Kubernetes Platform on AWS
 
-## Estado actual: fases 1, 2 y 3 completadas
+A production-shaped Kubernetes platform built for the "Ingeniero Cloud Senior" technical test:
+**k3s** on EC2, **Gateway API v1.4 + Istio**, **GitOps with ArgoCD**, **CloudNativePG**, **Longhorn**,
+full **observability** (Prometheus/Grafana/Jaeger/Kiali/Loki), a 2-microservice **ToDo** app, and public
+exposure — all declarative and reproducible.
 
-Cluster Kubernetes sobre tres máquinas virtuales VirtualBox, sin nodos basados en Docker:
+> Companion docs: [`docs/EVIDENCE.md`](docs/EVIDENCE.md) — the 11 review items mapped to commands + real results ·
+> [`docs/RUNBOOK.md`](docs/RUNBOOK.md) — every exact command, step by step ·
+> [`docs/STUDY_GUIDE.md`](docs/STUDY_GUIDE.md) — design decisions + why, per block, for the live review ·
+> [`task_plan.md`](task_plan.md) — the phased plan with verification gates · [`tasks.json`](tasks.json) —
+> machine-readable task list.
 
-| Nodo | IP | Rol |
-|---|---:|---|
-| `master` | `192.168.1.50` | K3s server, control-plane y etcd |
-| `worker1` | `192.168.1.51` | K3s agent |
-| `worker2` | `192.168.1.53` | K3s agent |
+## Architecture
 
-Componentes instalados en esta fase:
+```
+                Internet
+                   │
+   ┌───────────────┼──────────────────────────┐
+   │ Cloudflare Tunnel (public *.trycloudflare)│   /etc/hosts -> EC2 public IP :443
+   │      -> todo-frontend                     │   *.local -> Istio Gateway (TLS, local CA)
+   └───────────────┼──────────────────────────┘
+                   ▼
+        Istio Gateway (Gateway API v1.4, GatewayClass=istio, ServiceLB node IPs)
+                   │  HTTPRoutes: todo / todo-api / argocd / grafana / jaeger / kiali / longhorn .local
+                   ▼
+   ns todo (Istio sidecars, mTLS STRICT):  todo-frontend (React/Nginx) ─/api─> todo-api (Go) ─> CNPG
+   ns infra/observability:  ArgoCD · cert-manager · Longhorn · Prometheus/Grafana · Jaeger · Kiali · Loki
+   3x EC2 m7i-flex.large (Ubuntu 24.04) · k3s 1.35 (embedded etcd) · Calico VXLAN
+```
 
-- K3s `v1.36.1+k3s1` con etcd embebido.
-- Calico `v3.32.0` como CNI, con VXLAN y soporte completo de `NetworkPolicy`.
-- MetalLB `v0.16.1` en modo Layer 2.
-- Pool MetalLB: `192.168.1.240-192.168.1.250`.
-- Gateway API Standard Channel `v1.4.1`.
-- cert-manager `v1.20.2` con CA raíz local.
-- Istio `1.30.1` como controlador de Gateway API.
-- Gateway principal HTTP/HTTPS en `192.168.1.240`.
-- ArgoCD `v3.4.4` mediante App of Apps y sincronización automática.
+## Why k3s over kubeadm (the required justification)
+- **ServiceLB (klipper)** publishes `LoadBalancer` services on the **real node IP** via hostPort — the
+  clean way to get an external IP on AWS EC2. **MetalLB L2 does not work on AWS**: it relies on ARP, but
+  the AWS VPC is a software-defined network that ignores gratuitous ARP for unassigned IPs. The spec
+  explicitly allows the k3s integrated LB as a justified alternative, so we **skip MetalLB**.
+- Lighter control plane for a resource-constrained (24 GB) lab, while `--cluster-init` gives **embedded
+  etcd** (not SQLite) to keep production HA semantics.
+- Trade-off vs kubeadm: less "vanilla", but every replaced piece (flannel→Calico, traefik→Gateway API)
+  is swapped for the component the test actually asks for.
 
-Longhorn, CloudNativePG y el stack de observabilidad permanecen declarados en el repositorio y se activan en sus fases correspondientes para mantener cada entrega verificable.
+## Prerequisites
+- An AWS account with EC2 access (this build used a Free-plan account — see note below), AWS CLI v2.
+- Local tools: `kubectl`, `helm` v3+, `istioctl` 1.30, `git`, `gh` (for the private GitOps repo).
+- The local CA (`infra/ca/ca.crt`) imported into your OS/browser trust store (see below).
 
-## Elección de bootstrap: K3s
+> **AWS Free-plan note:** this account only allows free-tier-eligible instance types. The largest is
+> `m7i-flex.large` (2 vCPU / 8 GB), so the cluster is **3× m7i-flex.large = 24 GB total** and the stack
+> is resource-tuned accordingly. On a paid account use `t3.large` + 2× `t3.xlarge` for more headroom.
 
-Se eligió K3s porque el laboratorio se ejecuta en VMs con recursos compartidos y K3s reduce memoria, procesos y tiempo de bootstrap sin abandonar conformidad Kubernetes. Usa APIs estándar, containerd y permite reemplazar sus componentes integrados.
-
-Frente a kubeadm, esta opción deja más tiempo de la prueba para demostrar Gateway API, GitOps, almacenamiento y observabilidad. Para mantener fidelidad a producción se usó `--cluster-init`, por lo que el datastore es etcd y no SQLite. El miembro único de etcd es suficiente para este laboratorio; en producción se usarían tres nodos server para mantener quorum.
-
-Se deshabilitaron Flannel, ServiceLB, Traefik y Local Path:
-
-- Calico reemplaza Flannel y ofrece `NetworkPolicy` completa para la aplicación e Istio.
-- MetalLB reemplaza ServiceLB y entrega IPs reales de la LAN mediante ARP/NDP.
-- Istio será el proveedor posterior de Gateway API.
-- Longhorn será la StorageClass posterior.
-
-Calico usa VXLAN, evitando depender de sesiones BGP en la red VirtualBox. La configuración CNI habilita `allow_ip_forwarding`, requerido para el tráfico redirigido por sidecars de Istio.
-
-## Bootstrap reproducible
-
-En el master:
+## Bring the environment up from zero
+The full, copy-pasteable command sequence is in **[`docs/RUNBOOK.md`](docs/RUNBOOK.md)**. High level:
 
 ```bash
-curl -sfL https://get.k3s.io -o /tmp/install-k3s.sh
-sudo env INSTALL_K3S_VERSION='v1.36.1+k3s1' sh /tmp/install-k3s.sh server \
-  --cluster-init \
-  --write-kubeconfig-mode=644 \
-  --flannel-backend=none \
-  --disable-network-policy \
-  --disable=servicelb \
-  --disable=traefik \
-  --disable=local-storage \
-  --node-taint='node-role.kubernetes.io/control-plane=true:NoSchedule' \
-  --secrets-encryption
+# 0. AWS infra: key pair, security group, 3 EC2 + extra EBS   (docs/RUNBOOK.md Phase 0)
+# 1. k3s + Calico                                              (infra/k3s, infra/calico)
+# 2. cert-manager local CA                                     (infra/cert-manager)
+# 3. Gateway API v1.4 + Istio                                  (infra/gateway)
+# 4. ArgoCD + App-of-Apps  -> everything else is GitOps:
+kubectl apply -f gitops/root-app.yaml
 ```
+After step 4 ArgoCD reconciles `gitops/apps/*` (registry, longhorn, CNPG, app, observability, expose).
 
-El manifiesto oficial de Calico se fija en `v3.32.0`. Antes de aplicarlo se configura el CIDR `10.42.0.0/16`, `allow_ip_forwarding`, backend VXLAN y sondas exclusivas de Felix.
-
-Los workers se unen con el token de `/var/lib/rancher/k3s/server/node-token`. En Kubernetes 1.36 las etiquetas reservadas de rol se aplican después desde la API:
-
+A `Makefile` wraps the bootstrap phases:
 ```bash
-kubectl label node worker1 node-role.kubernetes.io/worker=true
-kubectl label node worker2 node-role.kubernetes.io/worker=true
+make cluster infra gateway argocd observability expose   # targets per block
 ```
 
-MetalLB se instala desde su manifiesto nativo oficial y la configuración L2 versionada se encuentra en [infra/metallb/l2-config.yaml](infra/metallb/l2-config.yaml).
+## /etc/hosts entries for the review
+Point every hostname at the Istio Gateway (any node's public IP). Replace `<NODE_IP>`:
+```
+<NODE_IP>  todo.local todo-api.local argocd.local grafana.local jaeger.local kiali.local longhorn.local
+```
+- `todo.local` — ToDo app (frontend; `/api` is proxied to todo-api through the mesh)
+- `todo-api.local` — REST API directly via the Gateway
+- `argocd.local` · `grafana.local` · `jaeger.local` (path `/jaeger`) · `kiali.local` (path `/kiali`) ·
+  `longhorn.local`
 
-## Gateway API con Istio
-
-La instalación respeta el orden exigido por la prueba:
-
-1. CRDs del Gateway API Standard Channel `v1.4.1`.
-2. cert-manager `v1.20.2`.
-3. Istio `1.30.1` con perfil `minimal`.
-4. CA local, certificado TLS, Gateway y HTTPRoute de redirección.
-
-Se usa la `GatewayClass istio`, registrada por Istio con el controlador `istio.io/gateway-controller`. El recurso [infra/platform/gateway.yaml](infra/platform/gateway.yaml) define:
-
-- listener HTTP en el puerto 80;
-- listener HTTPS en el puerto 443;
-- terminación TLS con el Secret `wildcard-local-tls`;
-- redirección HTTP a HTTPS mediante `RequestRedirect` con código 301;
-- IP solicitada `192.168.1.240` a MetalLB.
-
-La cadena de confianza local está declarada en [infra/platform/certificates.yaml](infra/platform/certificates.yaml): un `ClusterIssuer` autofirmado crea la CA `LinkTIC Local Root CA`; después el issuer `local-ca` firma el certificado `*.local` usado por el Gateway.
-
-## Evidencia para sustentación
-
-Ejecutar desde el master:
-
+## Import the local CA (no TLS warnings)
+All `*.local` certs are signed by a cert-manager root CA. Trust it once:
 ```bash
-# 1. etcd y API saludables
-sudo k3s kubectl get --raw='/readyz?verbose' | grep -E 'etcd|readyz check passed'
-
-# 2. Los tres nodos Ready
-sudo k3s kubectl get nodes -o wide
-
-# 3. CNI Calico saludable en los tres nodos
-sudo k3s kubectl get pods -n kube-system -l k8s-app=calico-node -o wide
-sudo k3s kubectl get deployment calico-kube-controllers -n kube-system
-sudo k3s kubectl get ippool default-ipv4-ippool \
-  -o custom-columns=NAME:.metadata.name,CIDR:.spec.cidr,IPIP:.spec.ipipMode,VXLAN:.spec.vxlanMode
-
-# 4. MetalLB L2 saludable
-sudo k3s kubectl get pods -n metallb-system -o wide
-sudo k3s kubectl get ipaddresspool,l2advertisement -n metallb-system
-
-# 5. GatewayClass y Gateway aceptados/programados
-sudo k3s kubectl get gatewayclass istio
-sudo k3s kubectl get gateway platform-gateway -n istio-system
-sudo k3s kubectl get service platform-gateway-istio -n istio-system
-
-# 6. Certificado y HTTPRoute
-sudo k3s kubectl get certificate wildcard-local -n istio-system
-sudo k3s kubectl get httproute redirect-http-to-https -n istio-system
-
-# 7. Prueba real de redirect y HTTPS
-curl -I -H 'Host: todo.local' http://192.168.1.240/
-curl -kI --resolve todo.local:443:192.168.1.240 https://todo.local/
+# macOS
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain infra/ca/ca.crt
+# Linux
+sudo cp infra/ca/ca.crt /usr/local/share/ca-certificates/k8s-lab.crt && sudo update-ca-certificates
 ```
 
-Resultados esperados:
-
-- `etcd ok`, `etcd-readiness ok` y `readyz check passed`.
-- `master`, `worker1` y `worker2` en `Ready`.
-- Tres pods `calico-node` en `1/1 Running`, sin reinicios.
-- Un controlador y tres speakers MetalLB en `Running`.
-- `GatewayClass istio` con `Accepted=True`.
-- `platform-gateway` con `Accepted=True` y `Programmed=True`.
-- Service `platform-gateway-istio` con `EXTERNAL-IP 192.168.1.240`.
-- Certificado `wildcard-local` en `Ready=True`, emitido por `LinkTIC Local Root CA`.
-- HTTP responde `301` con `Location: https://todo.local/`.
-- HTTPS termina en `istio-envoy`; hasta desplegar la aplicación responde `404`, lo cual confirma que listener, TLS y LoadBalancer funcionan.
-
-## GitOps con ArgoCD
-
-ArgoCD `v3.4.4` está instalado en el namespace `argocd`. No se usa `port-forward`: la UI se publica mediante el `HTTPRoute` versionado en [infra/gitops-platform/argocd-route.yaml](infra/gitops-platform/argocd-route.yaml), con hostname `argocd.local` y TLS terminado por el Gateway de Istio.
-
-Agregar en el archivo `hosts` del equipo desde el que se realizará la demostración:
-
-```text
-192.168.1.240 argocd.local
+## Repository layout
+```
+infra/                bootstrap pieces (k3s, calico, cert-manager, gateway, ca, aws-ids)
+gitops/
+  root-app.yaml       App-of-Apps root (apply once)
+  apps/               one ArgoCD Application per component
+  manifests/          the actual k8s manifests (cert-manager, gateway, registry, todo, observability, ...)
+  set-repo.sh         repoint the whole tree to another Git repo in one command
+app/
+  todo-api/           Go 1.22 REST API (Dockerfile)
+  todo-frontend/      React 18 + Nginx SPA (Dockerfile)
+docs/                 RUNBOOK.md (commands) + STUDY_GUIDE.md (decisions & why)
 ```
 
-Después se accede directamente a `https://argocd.local`. El certificado está firmado por la CA local de cert-manager; para evitar la advertencia del navegador se debe importar `LinkTIC Local Root CA` en el almacén de confianza del equipo.
-
-La contraseña inicial del usuario `admin` se obtiene sin exponerla en el repositorio:
-
+## Migrating to a different GitOps repo
+Full step-by-step (incl. AWS pre-checks): **[docs/CHANGE-GITOPS-REPO.md](docs/CHANGE-GITOPS-REPO.md)**. Quick version — the repo URL is centralized, so switching is one command:
 ```bash
-sudo k3s kubectl -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath='{.data.password}' | base64 -d; echo
+./gitops/set-repo.sh https://github.com/ORG/NEW-REPO
+git commit -am "repoint gitops" && git push
+kubectl -n argocd patch app root --type merge -p '{"operation":{"sync":{}}}'
 ```
 
-### Fuente de verdad y App of Apps
+## Key design decisions (full rationale in docs/STUDY_GUIDE.md)
+| Area | Decision |
+|------|----------|
+| Bootstrap | k3s + ServiceLB (skip MetalLB on AWS); embedded etcd |
+| CNI | Calico **VXLAN** (always-encapsulate — survives the AWS source/dest check) |
+| Networking fix | apiserver `advertise-address` = **private IP** (public IP broke cross-node ClusterIP) |
+| Ingress | Gateway API v1.4, one wildcard `*.local` cert, TLS terminated at the Gateway |
+| GitOps | ArgoCD App-of-Apps + Sync Waves; HTTPRoutes/Gateways are Git-managed |
+| Registry | Docker Registry v2, NodePort, images built in-cluster with kaniko |
+| Data | CloudNativePG 3 instances on Longhorn; app uses the `-rw` service + generated Secret |
+| Storage | Longhorn 2 replicas on a dedicated EBS; local-path kept as single default SC |
+| Mesh/observability | Istio mTLS STRICT; Prometheus/Grafana/Jaeger/Kiali/Loki; 100% trace sampling via Telemetry |
+| Public exposure | Cloudflare TryCloudflare tunnel (no account needed; Ngrok needs an authtoken) |
 
-El repositorio público se puede consumir directamente. Para registrarlo explícitamente desde la CLI:
-
-```bash
-argocd repo add https://github.com/jusefe11/linktic.git
-```
-
-Si el repositorio cambia a privado, el mismo comando debe incluir un token mediante `--username` y `--password`, almacenado fuera de Git.
-
-La Application raíz es [root/root-app.yaml](root/root-app.yaml). El bootstrap inicial se limita a instalar ArgoCD y aplicar este recurso:
-
-```bash
-sudo k3s kubectl apply -f root/root-app.yaml
-```
-
-La estructura declarativa es:
-
-- `root/`: Application raíz y Applications agrupadoras.
-- `apps/`: Applications de `todo-api` y `todo-frontend`.
-- `infra/`: Gateway API, cert-manager, MetalLB, Longhorn y CloudNativePG.
-- `observability/`: Istio, kube-prometheus-stack, Loki y Gateways de plataforma.
-
-Las fases futuras están versionadas pero se habilitan al abordar su punto de la prueba, evitando instalar bases de datos, almacenamiento y observabilidad antes de validarlos. Ningún Gateway ni HTTPRoute se crea manualmente: los recursos activos salen de `infra/gitops-platform/` y son propiedad de `platform-gateway-config`.
-
-### Orden mediante Sync Waves
-
-| Wave | Application | Propósito |
-|---:|---|---|
-| `-5` | `gateway-api-crds` | CRDs Standard Channel v1.4.1 |
-| `-4` | `cert-manager` | CRDs, controladores y CA local |
-| `-3` | `metallb` | LoadBalancer Layer 2 |
-| `-2` | `istio-base` | CRDs de Istio |
-| `-1` | `istiod` | Controlador Gateway API |
-| `0` | `platform-gateway-config` | namespaces, certificados, Gateway y HTTPRoutes |
-
-### Evidencia de sustentación del punto 3
-
-```bash
-# Todas las Applications deben estar Synced + Healthy
-sudo k3s kubectl -n argocd get applications.argoproj.io \
-  -o custom-columns=NAME:.metadata.name,SYNC:.status.sync.status,HEALTH:.status.health.status \
-  --sort-by=.metadata.name
-
-# HTTPRoute aceptada y Gateway programado
-sudo k3s kubectl -n argocd get httproute argocd
-sudo k3s kubectl -n istio-system get gateway platform-gateway
-
-# Acceso real, sin port-forward
-curl -kI --resolve argocd.local:443:192.168.1.240 https://argocd.local/
-curl -I --resolve argocd.local:80:192.168.1.240 http://argocd.local/
-
-# Evidencia del ciclo GitOps: el valor vivo debe ser v3
-sudo k3s kubectl -n argocd get configmap gitops-cycle-demo \
-  -o jsonpath='{.data.version}'; echo
-```
-
-El ciclo completo se demostró nuevamente con el commit `b91a180`: se cambió `infra/gitops-platform/gitops-cycle.yaml` de `v2` a `v3`, se hizo push a `main`, ArgoCD detectó el commit y `platform-gateway-config` volvió automáticamente a `Synced + Healthy`. El ConfigMap vivo mostró `v3` sin ejecutar `kubectl apply` sobre ese manifiesto.
-
-Resultados verificados:
-
-- nueve Applications en `Synced + Healthy`;
-- `GatewayClass istio` con `Accepted=True`;
-- `platform-gateway` con `Programmed=True` e IP `192.168.1.240`;
-- `https://argocd.local/` devuelve HTTP `200`;
-- `http://argocd.local/` devuelve HTTP `301` hacia HTTPS;
-- los tres nodos permanecen `Ready`.
+## Bonus implemented
+- **mTLS STRICT** in `todo` (+5) — plaintext to the API is rejected; postgres excluded (no sidecar).
+- **HPA load test** (+5) — load on todo-api scales the Deployment 2→up to 5 and back.

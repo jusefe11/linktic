@@ -1,0 +1,21 @@
+# Trimmed kube-prometheus-stack for a 24GB cluster.
+alertmanager: { enabled: false }
+grafana:
+  adminPassword: admin
+  service: { port: 80 }
+  # allow access via the Gateway hostname
+  grafana.ini:
+    server: { root_url: "https://grafana.local", serve_from_sub_path: false }
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    resources:
+      requests: { cpu: 100m, memory: 400Mi }
+      limits: { memory: 1Gi }
+    # scrape PodMonitors/ServiceMonitors in all namespaces (CNPG, Istio)
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+prometheus-node-exporter:
+  resources: { requests: { cpu: 20m, memory: 24Mi } }
+kube-state-metrics:
+  resources: { requests: { cpu: 20m, memory: 32Mi } }

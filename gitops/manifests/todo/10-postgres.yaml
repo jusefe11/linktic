@@ -1,0 +1,25 @@
+# CloudNativePG cluster: 1 primary + 2 read replicas, storage on Longhorn, DB tododb.
+# CNPG auto-generates Secret todo-pg-app (owner creds) and Services todo-pg-rw / -ro / -r.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: todo-pg
+  namespace: todo
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.4
+  primaryUpdateStrategy: unsupervised
+  # Postgres pods must NOT get an Istio sidecar (it breaks replication / instance-manager checks).
+  inheritedMetadata:
+    annotations:
+      sidecar.istio.io/inject: "false"
+  storage:
+    storageClass: longhorn
+    size: 5Gi
+  bootstrap:
+    initdb:
+      database: tododb
+      owner: todo
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 512Mi }

@@ -1,0 +1,9 @@
+# Longhorn values: 2 replicas/volume, data on the dedicated EBS at /var/lib/longhorn.
+persistence:
+  defaultClassReplicaCount: 2
+defaultSettings:
+  defaultReplicaCount: 2
+  defaultDataPath: /var/lib/longhorn
+  replicaSoftAntiAffinity: false      # spread replicas across nodes
+longhornUI:
+  replicas: 1

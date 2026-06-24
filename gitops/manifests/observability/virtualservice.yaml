@@ -1,0 +1,15 @@
+# Istio VirtualService on todo-api: timeout + retries. Demonstrates app-level traffic policy
+# (block 9 requirement) and makes the API resilient to transient replica/failover blips.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: { name: todo-api, namespace: todo }
+spec:
+  hosts: ["todo-api"]
+  http:
+  - timeout: 5s
+    retries:
+      attempts: 3
+      perTryTimeout: 2s
+      retryOn: "5xx,connect-failure,refused-stream"
+    route:
+    - destination: { host: todo-api, port: { number: 8080 } }

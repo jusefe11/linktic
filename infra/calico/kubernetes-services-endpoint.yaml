@@ -1,0 +1,11 @@
+# Breaks the Calico-operator bootstrap deadlock on k3s: the operator/calico-node
+# cannot reach the API via ClusterIP 10.43.0.1 before the CNI exists. This makes
+# them talk DIRECTLY to the API server at the server node IP:6443.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kubernetes-services-endpoint
+  namespace: tigera-operator
+data:
+  KUBERNETES_SERVICE_HOST: "172.31.9.150"
+  KUBERNETES_SERVICE_PORT: "6443"

@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: infra-longhorn-route
+  namespace: argocd
+  annotations: { argocd.argoproj.io/sync-wave: "5" }
+spec:
+  project: default
+  source: { repoURL: https://github.com/caferrerb/cloud-native-k8s-test, targetRevision: main, path: gitops/manifests/longhorn-route }
+  destination: { server: https://kubernetes.default.svc, namespace: longhorn-system }
+  syncPolicy: { automated: { prune: true, selfHeal: true } }

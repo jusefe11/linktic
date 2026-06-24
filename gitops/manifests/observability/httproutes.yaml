@@ -1,0 +1,24 @@
+# UIs exposed via the main Gateway (HTTPS, local CA) — no port-forward at review.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: grafana, namespace: monitoring }
+spec:
+  parentRefs: [{ name: main-gateway, namespace: istio-ingress, sectionName: https }]
+  hostnames: ["grafana.local"]
+  rules: [{ backendRefs: [{ name: kube-prom-grafana, port: 80 }] }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: jaeger, namespace: istio-system }
+spec:
+  parentRefs: [{ name: main-gateway, namespace: istio-ingress, sectionName: https }]
+  hostnames: ["jaeger.local"]
+  rules: [{ backendRefs: [{ name: tracing, port: 80 }] }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: kiali, namespace: istio-system }
+spec:
+  parentRefs: [{ name: main-gateway, namespace: istio-ingress, sectionName: https }]
+  hostnames: ["kiali.local"]
+  rules: [{ backendRefs: [{ name: kiali, port: 20001 }] }]

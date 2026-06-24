@@ -1,0 +1,66 @@
+# Network segmentation inside the todo namespace.
+# Default-deny ingress, then allow only the required paths. Egress left open so the Istio
+# sidecars can reach istiod/DNS (a strict egress policy would break the mesh).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: todo }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# Frontend: reachable only from the Istio gateway (north-south entry).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-frontend, namespace: todo }
+spec:
+  podSelector: { matchLabels: { app: todo-frontend } }
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } }
+    ports: [{ protocol: TCP, port: 3000 }]
+---
+# API: reachable only from the frontend pods and from the gateway (for the todo-api.local route).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-api, namespace: todo }
+spec:
+  podSelector: { matchLabels: { app: todo-api } }
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: { matchLabels: { app: todo-frontend } }
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: istio-ingress } }
+    ports: [{ protocol: TCP, port: 8080 }]
+---
+# PostgreSQL: reachable only from the API pods (port 5432).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-postgres, namespace: todo }
+spec:
+  podSelector: { matchLabels: { cnpg.io/cluster: todo-pg } }
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - podSelector: { matchLabels: { app: todo-api } }
+    ports: [{ protocol: TCP, port: 5432 }]
+  # CNPG instances also need to talk to each other (replication) and the operator
+  - from:
+    - podSelector: { matchLabels: { cnpg.io/cluster: todo-pg } }
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: cnpg-system } }
+---
+# Allow Prometheus (monitoring ns) to scrape metrics from all todo pods (sidecars, CNPG, app).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-metrics-scrape, namespace: todo }
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+  - from:
+    - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: monitoring } }
+    ports:
+    - { protocol: TCP, port: 15020 }   # istio merged metrics
+    - { protocol: TCP, port: 15090 }   # istio envoy stats
+    - { protocol: TCP, port: 9187 }    # cnpg exporter
+    - { protocol: TCP, port: 8080 }    # todo-api /metrics

@@ -1,5 +1,9 @@
-tmp/
-*.pdf
-.env
-local-root-ca.crt
+# secrets / environment-specific
+infra/kubeconfig
+infra/aws-ids.env
+*.pem
+infra/ca/*.key
+.istio-version
 
+keys.txt
+*.pem
