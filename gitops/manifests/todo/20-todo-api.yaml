@@ -5,6 +5,8 @@ metadata: { name: todo-api, namespace: todo }
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: todo-api-config, namespace: todo }
+labels:
+    demo: "gitops"
 data:
   DB_HOST: "todo-pg-rw"        # CNPG read-write service (always points to current primary)
   DB_PORT: "5432"
