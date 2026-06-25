@@ -1,49 +1,53 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: todo-frontend, namespace: todo }
+---
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: todo-frontend
-  namespace: todo
-  annotations:
-    demo: "2"
+metadata: { name: todo-frontend, namespace: todo }
 spec:
-  replicas: 3
+  replicas: 2
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  selector:
-    matchLabels:
-      app: todo-frontend
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
+  selector: { matchLabels: { app: todo-frontend } }
   template:
-    metadata:
-      annotations:
-        demo: "2"
-      labels:
-        app: todo-frontend
+    metadata: { labels: { app: todo-frontend } }
     spec:
       serviceAccountName: todo-frontend
       containers:
       - name: todo-frontend
         image: 172.31.9.150:30500/todo-frontend:v2
-        ports:
-        - containerPort: 3000
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 3
-          periodSeconds: 5
+        ports: [{ containerPort: 3000 }]
+        livenessProbe:  { httpGet: { path: /, port: 3000 }, initialDelaySeconds: 5, periodSeconds: 10 }
+        readinessProbe: { httpGet: { path: /, port: 3000 }, initialDelaySeconds: 3, periodSeconds: 5 }
         resources:
-          requests:
-            cpu: 25m
-            memory: 24Mi
-          limits:
-            cpu: 200m
-            memory: 96Mi
+          requests: { cpu: 25m, memory: 24Mi }
+          limits:   { cpu: 200m, memory: 96Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: todo-frontend, namespace: todo }
+spec:
+  selector: { app: todo-frontend }
+  ports: [{ port: 3000, targetPort: 3000 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: todo-frontend, namespace: todo }
+spec:
+  parentRefs: [{ name: main-gateway, namespace: istio-ingress, sectionName: https }]
+  hostnames: ["todo.local"]
+  rules:
+  - backendRefs: [{ name: todo-frontend, port: 3000 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: todo-frontend, namespace: todo }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: todo-frontend }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
