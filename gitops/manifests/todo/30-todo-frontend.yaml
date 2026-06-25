@@ -4,7 +4,11 @@ metadata: { name: todo-frontend, namespace: todo }
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: todo-frontend, namespace: todo }
+metadata:
+  name: todo-frontend
+  namespace: todo
+  annotations:
+    demo: "1"
 spec:
   replicas: 3
   strategy:
