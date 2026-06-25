@@ -16,7 +16,11 @@ spec:
     rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }
   selector: { matchLabels: { app: todo-frontend } }
   template:
-    metadata: { labels: { app: todo-frontend } }
+  metadata:
+    annotations:
+      demo: "2"
+    labels:
+      app: todo-frontend
     spec:
       serviceAccountName: todo-frontend
       containers:
