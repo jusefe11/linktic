@@ -1,61 +1,72 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: todo-api, namespace: todo }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: todo-api-config, namespace: todo }
+labels:
+    demo: "gitops"
+data:
+  DB_HOST: "todo-pg-rw"        # CNPG read-write service (always points to current primary)
+  DB_PORT: "5432"
+  DB_NAME: "tododb"
+  DB_SSLMODE: "require"
+  PORT: "8080"
+  # Prueba GitOps
+  
+---
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: todo-api
-  namespace: todo
+metadata: { name: todo-api, namespace: todo }
 spec:
   replicas: 2
   strategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  selector:
-    matchLabels:
-      app: todo-api
+    rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }   # zero-downtime
+  selector: { matchLabels: { app: todo-api } }
   template:
-    metadata:
-      labels:
-        app: todo-api
-      annotations:
-        demo: "gitops-1"
+    metadata: { labels: { app: todo-api } }
     spec:
       serviceAccountName: todo-api
       containers:
       - name: todo-api
         image: 172.31.9.150:30500/todo-api:v1
-        ports:
-        - containerPort: 8080
-        envFrom:
-        - configMapRef:
-            name: todo-api-config
+        ports: [{ containerPort: 8080 }]
+        envFrom: [{ configMapRef: { name: todo-api-config } }]
         env:
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: todo-pg-app
-              key: username
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: todo-pg-app
-              key: password
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 10
-        readinessProbe:
-          httpGet:
-            path: /readyz
-            port: 8080
-          initialDelaySeconds: 5
-          periodSeconds: 5
+        # DB credentials come from the CNPG-generated Secret todo-pg-app
+        - { name: DB_USER,     valueFrom: { secretKeyRef: { name: todo-pg-app, key: username } } }
+        - { name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: todo-pg-app, key: password } } }
+        livenessProbe:  { httpGet: { path: /healthz, port: 8080 }, initialDelaySeconds: 5, periodSeconds: 10 }
+        readinessProbe: { httpGet: { path: /readyz,  port: 8080 }, initialDelaySeconds: 5, periodSeconds: 5 }
         resources:
-          requests:
-            cpu: 50m
-            memory: 32Mi
-          limits:
-            cpu: 300m
-            memory: 128Mi
+          requests: { cpu: 50m, memory: 32Mi }
+          limits:   { cpu: 300m, memory: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: todo-api, namespace: todo }
+spec:
+  selector: { app: todo-api }
+  ports: [{ port: 8080, targetPort: 8080 }]
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata: { name: todo-api, namespace: todo }
+spec:
+  parentRefs: [{ name: main-gateway, namespace: istio-ingress, sectionName: https }]
+  hostnames: ["todo-api.local"]
+  rules:
+  - backendRefs: [{ name: todo-api, port: 8080 }]
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: todo-api, namespace: todo }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: todo-api }
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }
