@@ -61,4 +61,4 @@ spec:
     - type: RequestRedirect
       requestRedirect:
         scheme: https
-        statusCode: 304
+        statusCode: 301
