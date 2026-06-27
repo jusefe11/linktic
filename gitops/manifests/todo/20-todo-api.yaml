@@ -20,7 +20,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: todo-api, namespace: todo }
 spec:
-  replicas: 3
+  replicas: 2
   strategy:
     type: RollingUpdate
     rollingUpdate: { maxSurge: 1, maxUnavailable: 0 }   # zero-downtime
@@ -65,7 +65,7 @@ kind: HorizontalPodAutoscaler
 metadata: { name: todo-api, namespace: todo }
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: todo-api }
-  minReplicas: 3
+  minReplicas: 2
   maxReplicas: 5
   metrics:
   - type: Resource
