@@ -65,7 +65,7 @@ kind: HorizontalPodAutoscaler
 metadata: { name: todo-api, namespace: todo }
 spec:
   scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: todo-api }
-  minReplicas: 2
+  minReplicas: 3
   maxReplicas: 5
   metrics:
   - type: Resource
