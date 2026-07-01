@@ -12,7 +12,6 @@ metadata:
     argocd-image-updater.argoproj.io/frontend.update-strategy: latest
     argocd-image-updater.argoproj.io/frontend.allow-tags: regexp:^[0-9a-f]{7,40}$
     argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/image-updater-git
-    argocd-image-updater.argoproj.io/write-back-target: kustomization
     argocd-image-updater.argoproj.io/git-branch: main
 spec:
   project: default
