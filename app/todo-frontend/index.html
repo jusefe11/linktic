@@ -42,7 +42,7 @@
       function remove(x) { fetch(API + "/tasks/" + x.id, { method:"DELETE" }).then(load); }
 
       return h("div", null,
-        h("h1", null, "ToDo"),
+        h("h1", null, "ToDo · auto-CD ✅"),
         h("div", { className:"add" },
           h("input", { type:"text", value:title, placeholder:"New task...",
                        onChange:function(e){ setTitle(e.target.value); },
