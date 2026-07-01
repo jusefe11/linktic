@@ -1,0 +1,3 @@
+kustomize:
+  images:
+  - 172.31.9.150:30500/todo-frontend:9fb881c
