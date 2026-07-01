@@ -4,13 +4,13 @@ kind: Kustomization
 # This is what lets ArgoCD Image Updater write the running image tag back
 # to git (kustomize edit set image). The manifests themselves are untouched.
 resources:
-  - 00-namespace.yaml
-  - 10-postgres.yaml
-  - 20-todo-api.yaml
-  - 30-todo-frontend.yaml
-  - 40-networkpolicy.yaml
+- 00-namespace.yaml
+- 10-postgres.yaml
+- 20-todo-api.yaml
+- 30-todo-frontend.yaml
+- 40-networkpolicy.yaml
 images:
-  - name: 172.31.9.150:30500/todo-api
-    newTag: v1            # Image Updater overwrites this with the git SHA
-  - name: 172.31.9.150:30500/todo-frontend
-    newTag: v2            # Image Updater overwrites this with the git SHA
+- name: 172.31.9.150:30500/todo-api
+  newTag: v1 # Image Updater overwrites this with the git SHA
+- name: 172.31.9.150:30500/todo-frontend
+  newTag: 9fb881c
