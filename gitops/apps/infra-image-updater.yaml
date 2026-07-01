@@ -9,7 +9,7 @@ spec:
   source:
     repoURL: https://argoproj.github.io/argo-helm
     chart: argocd-image-updater
-    targetRevision: 1.2.4
+    targetRevision: 0.12.0           # ships image-updater v0.15.2 (annotations model)
     helm:
       values: |
         config:
