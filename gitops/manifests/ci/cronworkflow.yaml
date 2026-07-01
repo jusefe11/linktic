@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata: { name: ci-build, namespace: argo }
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid          # never run two builds at once
+  startingDeadlineSeconds: 60
+  workflowSpec:
+    serviceAccountName: ci-build
+    entrypoint: pipeline
+    ttlStrategy:
+      secondsAfterCompletion: 3600    # clean finished workflows after 1h
+    arguments:
+      parameters:
+        - { name: repo,     value: "https://github.com/jusefe11/linktic" }
+        - { name: branch,   value: "main" }
+        - { name: registry, value: "172.31.9.150:30500" }
+    templates:
+      - name: pipeline
+        steps:
+          - - { name: resolve, template: resolve }
+          - - name: build-api
+              template: kaniko
+              when: "'{{steps.resolve.outputs.parameters.build-api}}' == 'yes'"
+              arguments:
+                parameters:
+                  - { name: subpath, value: "app/todo-api" }
+                  - { name: image,   value: "todo-api" }
+                  - { name: tag,     value: "{{steps.resolve.outputs.parameters.sha}}" }
+            - name: build-frontend
+              template: kaniko
+              when: "'{{steps.resolve.outputs.parameters.build-frontend}}' == 'yes'"
+              arguments:
+                parameters:
+                  - { name: subpath, value: "app/todo-frontend" }
+                  - { name: image,   value: "todo-frontend" }
+                  - { name: tag,     value: "{{steps.resolve.outputs.parameters.sha}}" }
+
+      # Resolve the app/ tip SHA and decide which images are missing in the registry.
+      - name: resolve
+        script:
+          image: alpine/git:latest
+          command: [sh]
+          source: |
+            set -eu
+            apk add --no-cache curl >/dev/null 2>&1 || true
+            git clone --filter=blob:none --quiet "{{workflow.parameters.repo}}" /tmp/src
+            cd /tmp/src && git checkout --quiet "{{workflow.parameters.branch}}"
+            SHA=$(git log -1 --format=%h -- app/)        # anti-loop: tag follows app/ only
+            printf '%s' "$SHA" > /tmp/sha
+            echo "app/ tip commit = $SHA"
+            REG="{{workflow.parameters.registry}}"
+            for img in todo-api todo-frontend; do
+              code=$(curl -s -o /dev/null -w '%{http_code}' \
+                -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+                "http://$REG/v2/$img/manifests/$SHA")
+              if [ "$code" = "200" ]; then echo no  > "/tmp/build-$img"; \
+                                       else echo yes > "/tmp/build-$img"; fi
+            done
+        outputs:
+          parameters:
+            - { name: sha,            valueFrom: { path: /tmp/sha } }
+            - { name: build-api,      valueFrom: { path: /tmp/build-todo-api } }
+            - { name: build-frontend, valueFrom: { path: /tmp/build-todo-frontend } }
+
+      # Build one image from the git context sub-path and push to the in-cluster registry.
+      - name: kaniko
+        inputs:
+          parameters: [ { name: subpath }, { name: image }, { name: tag } ]
+        container:
+          image: gcr.io/kaniko-project/executor:latest
+          args:
+            - "--context=git://github.com/jusefe11/linktic.git#refs/heads/{{workflow.parameters.branch}}"
+            - "--context-sub-path={{inputs.parameters.subpath}}"
+            - "--destination={{workflow.parameters.registry}}/{{inputs.parameters.image}}:{{inputs.parameters.tag}}"
+            - "--insecure"          # registry is plain HTTP
+            - "--skip-tls-verify"
+            - "--cache=true"

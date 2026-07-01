@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: infra-image-updater
+  namespace: argocd
+  annotations: { argocd.argoproj.io/sync-wave: "3" }
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argocd-image-updater
+    targetRevision: 1.2.4
+    helm:
+      values: |
+        config:
+          logLevel: info
+          # In-cluster registry speaks plain HTTP → declare it insecure here
+          # (single owner of registries.conf; no separate ConfigMap).
+          registries:
+            - name: in-cluster
+              api_url: http://172.31.9.150:30500
+              prefix: 172.31.9.150:30500
+              insecure: true
+              default: true
+  destination: { server: https://kubernetes.default.svc, namespace: argocd }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }

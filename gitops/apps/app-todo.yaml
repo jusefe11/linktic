@@ -3,7 +3,17 @@ kind: Application
 metadata:
   name: app-todo
   namespace: argocd
-  annotations: { argocd.argoproj.io/sync-wave: "6" }
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+    # --- ArgoCD Image Updater: auto-detect new image tags and write them back to git ---
+    argocd-image-updater.argoproj.io/image-list: api=172.31.9.150:30500/todo-api,frontend=172.31.9.150:30500/todo-frontend
+    argocd-image-updater.argoproj.io/api.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/api.allow-tags: regex:^[0-9a-f]{7,40}$
+    argocd-image-updater.argoproj.io/frontend.update-strategy: newest-build
+    argocd-image-updater.argoproj.io/frontend.allow-tags: regex:^[0-9a-f]{7,40}$
+    argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/image-updater-git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
+    argocd-image-updater.argoproj.io/git-branch: main
 spec:
   project: default
   source: { repoURL: https://github.com/jusefe11/linktic, targetRevision: main, path: gitops/manifests/todo }

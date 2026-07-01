@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: ci-build, namespace: argo }
+---
+# Minimal RBAC for the Argo Workflows emissary executor (write task results).
+# The CI only builds and pushes over the network; it does NOT touch the `todo`
+# namespace (Image Updater performs the deploy), so no cross-namespace RBAC.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: ci-build, namespace: argo }
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["workflowtaskresults"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: ci-build, namespace: argo }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: ci-build }
+subjects:
+  - { kind: ServiceAccount, name: ci-build, namespace: argo }

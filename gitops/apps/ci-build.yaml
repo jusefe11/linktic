@@ -1,0 +1,11 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ci-build
+  namespace: argocd
+  annotations: { argocd.argoproj.io/sync-wave: "7" }   # after Argo Workflows (2) + app-todo (6)
+spec:
+  project: default
+  source: { repoURL: https://github.com/jusefe11/linktic, targetRevision: main, path: gitops/manifests/ci }
+  destination: { server: https://kubernetes.default.svc, namespace: argo }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }
