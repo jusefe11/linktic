@@ -1,4 +1,4 @@
 kustomize:
   images:
-  - 172.31.9.150:30500/todo-api=172.31.9.150:30500/todo-api:2dafbae
-  - 172.31.9.150:30500/todo-frontend=172.31.9.150:30500/todo-frontend:2dafbae
+  - 172.31.9.150:30500/todo-api=172.31.9.150:30500/todo-api:c2f2aa4
+  - 172.31.9.150:30500/todo-frontend=172.31.9.150:30500/todo-frontend:c2f2aa4
