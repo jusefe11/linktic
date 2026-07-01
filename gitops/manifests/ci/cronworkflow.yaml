@@ -51,12 +51,15 @@ spec:
             printf '%s' "$SHA" > /tmp/sha
             echo "app/ tip commit = $SHA"
             REG="{{workflow.parameters.registry}}"
+            # Use tags/list: robust regardless of manifest media type
+            # (kaniko pushes OCI manifests, so the manifests endpoint with a
+            # schema2 Accept header 404s even when the tag exists).
             for img in todo-api todo-frontend; do
-              code=$(curl -s -o /dev/null -w '%{http_code}' \
-                -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
-                "http://$REG/v2/$img/manifests/$SHA")
-              if [ "$code" = "200" ]; then echo no  > "/tmp/build-$img"; \
-                                       else echo yes > "/tmp/build-$img"; fi
+              if curl -s "http://$REG/v2/$img/tags/list" | grep -q "\"$SHA\""; then
+                echo no  > "/tmp/build-$img"
+              else
+                echo yes > "/tmp/build-$img"
+              fi
             done
         outputs:
           parameters:
