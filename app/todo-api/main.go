@@ -141,7 +141,11 @@ func cors(next http.Handler) http.Handler {
 	})
 }
 
-func health(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }
+func health(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "text/plain")
+    w.WriteHeader(http.StatusOK)
+    w.Write([]byte("Backend Demo GitOps v2"))
+}
 
 func ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
